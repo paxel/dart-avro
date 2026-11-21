@@ -7,7 +7,7 @@
 [![Fuzz](https://github.com/paxel/dart-avro/actions/workflows/fuzz.yml/badge.svg?branch=summer)](https://github.com/paxel/dart-avro/actions/workflows/fuzz.yml)
 [![Release](https://img.shields.io/github/v/release/paxel/dart-avro)](https://github.com/paxel/dart-avro/releases)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-MIT)
-[![pub](https://img.shields.io/pub/v/avro)](https://pub.dev/packages/avro)
+[![pub.dev](https://img.shields.io/pub/v/avro)](https://pub.dev/packages/avro)
 
 # avro
 
