@@ -4,10 +4,14 @@
 //
 // Mutates valid inputs at random for the given time (default 60 seconds) and fails on the
 // first input that throws anything other than an AvroException, or that takes longer than
-// two seconds. Run from the repository root.
+// two seconds. The input that failed is written to fuzz/artifacts/fuzz/crash-<sha256>, where
+// the shared fuzz workflow of paxel/gates keeps it. Run from the repository root.
 
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
+
+import 'package:crypto/crypto.dart';
 
 import 'targets.dart';
 
@@ -28,13 +32,23 @@ void main(List<String> args) {
     final failure = fuzzOne(input, codecs);
     if (failure != null) {
       stderr.writeln(failure);
+      keepCrash(input);
       exit(1);
     }
     if (watch.elapsed > const Duration(seconds: 2)) {
       stderr.writeln('an input took ${watch.elapsed}: ${input.length} bytes');
+      keepCrash(input);
       exit(1);
     }
     runs++;
   }
   stdout.writeln('$runs inputs, no failure');
+}
+
+/// Writes [input] where the shared fuzz workflow uploads it.
+void keepCrash(Uint8List input) {
+  final file = File('fuzz/artifacts/fuzz/crash-${sha256.convert(input)}')
+    ..createSync(recursive: true)
+    ..writeAsBytesSync(input);
+  stderr.writeln('kept in ${file.path}');
 }
