@@ -1,0 +1,43 @@
+name: Interop
+
+# Round trips between this package and the Python avro package, the official Apache library
+# (ADR 5): Python writes and Dart reads, Dart writes and Python reads, for the cases of
+# tool/interop/cases.json. dart test needs nothing of this.
+on:
+  push:
+    branches: [summer]
+  pull_request:
+
+concurrency:
+  group: interop-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python avro 1.12.2
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: dart-lang/setup-dart@2286a0c042b44434fe26d292bbce8d34f7ec662b # v1.8.2
+        with:
+          sdk: 3.14.0
+      - name: Install Python avro
+        run: python -m pip install --require-hashes --no-deps -r tool/interop/requirements.txt
+      - name: Install the Dart packages
+        run: dart pub get --enforce-lockfile
+      - name: Python writes
+        run: python tool/interop/interop.py write "$RUNNER_TEMP/interop"
+      - name: Dart writes
+        run: dart run tool/interop/interop.dart write "$RUNNER_TEMP/interop"
+      - name: Dart reads what Python wrote
+        run: dart run tool/interop/interop.dart read "$RUNNER_TEMP/interop"
+      - name: Python reads what Dart wrote
+        run: python tool/interop/interop.py read "$RUNNER_TEMP/interop"

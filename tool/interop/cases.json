@@ -1,0 +1,168 @@
+{
+  "doc": "Interop cases between this package and the Python avro package (ADR 5). Values are in a JSON form both sides convert to their own values: bytes and fixed as hexadecimal, a non-null union value as {branch: value}, logical types as their underlying value, decimals as decimal text. Two gaps of Python avro 1.12.2 are left out: it writes a boolean in a union of boolean and double as a double, and it does not resolve an unknown enum symbol to the reader's default; the Dart tests cover both.",
+  "cases": [
+    {
+      "name": "interop",
+      "writer": "@test/data/apache/interop.avsc",
+      "values": [
+        {
+          "intField": 12,
+          "longField": 15234324,
+          "stringField": "hey",
+          "boolField": true,
+          "floatField": 1234.5,
+          "doubleField": -1234.25,
+          "bytesField": "3132",
+          "nullField": null,
+          "arrayField": [5.0, 0.5, -12.0],
+          "mapField": {"a": {"label": "a"}, "bee": {"label": "cee"}},
+          "unionField": {"double": 12.0},
+          "enumField": "C",
+          "fixedField": "000102030405060708090a0b0c0d0e0f",
+          "recordField": {
+            "label": "root",
+            "children": [{"label": "child", "children": []}]
+          }
+        },
+        {
+          "intField": -2147483648,
+          "longField": -9223372036854775808,
+          "stringField": "äöü 😀",
+          "boolField": false,
+          "floatField": -0.25,
+          "doubleField": 1e300,
+          "bytesField": "",
+          "nullField": null,
+          "arrayField": [],
+          "mapField": {},
+          "unionField": {"array": ["00", "ff"]},
+          "enumField": "A",
+          "fixedField": "ffffffffffffffffffffffffffffffff",
+          "recordField": {"label": "", "children": []}
+        },
+        {
+          "intField": 2147483647,
+          "longField": 9223372036854775807,
+          "stringField": "",
+          "boolField": true,
+          "floatField": 0.0,
+          "doubleField": 0.0,
+          "bytesField": "00",
+          "nullField": null,
+          "arrayField": [1.0],
+          "mapField": {"x": {"label": "y"}},
+          "unionField": {"array": []},
+          "enumField": "B",
+          "fixedField": "0123456789abcdef0123456789abcdef",
+          "recordField": {"label": "r", "children": []}
+        }
+      ]
+    },
+    {
+      "name": "logical",
+      "writer": {
+        "type": "record",
+        "name": "Logical",
+        "namespace": "interop",
+        "fields": [
+          {"name": "date", "type": {"type": "int", "logicalType": "date"}},
+          {"name": "timeMillis", "type": {"type": "int", "logicalType": "time-millis"}},
+          {"name": "timeMicros", "type": {"type": "long", "logicalType": "time-micros"}},
+          {"name": "tsMillis", "type": {"type": "long", "logicalType": "timestamp-millis"}},
+          {"name": "tsMicros", "type": {"type": "long", "logicalType": "timestamp-micros"}},
+          {"name": "decBytes", "type": {"type": "bytes", "logicalType": "decimal", "precision": 6, "scale": 2}},
+          {
+            "name": "decFixed",
+            "type": {"type": "fixed", "name": "Dec", "size": 4, "logicalType": "decimal", "precision": 6, "scale": 2}
+          },
+          {"name": "uuid", "type": {"type": "string", "logicalType": "uuid"}},
+          {"name": "maybeDate", "type": ["null", {"type": "int", "logicalType": "date"}]}
+        ]
+      },
+      "values": [
+        {
+          "date": 11017,
+          "timeMillis": 3723004,
+          "timeMicros": 3723000004,
+          "tsMillis": 946720800000,
+          "tsMicros": 946720800000005,
+          "decBytes": "-1234.56",
+          "decFixed": "12.34",
+          "uuid": "123e4567-e89b-12d3-a456-426614174000",
+          "maybeDate": {"int": -1}
+        },
+        {
+          "date": -719162,
+          "timeMillis": 0,
+          "timeMicros": 86399999999,
+          "tsMillis": -62135596800000,
+          "tsMicros": 0,
+          "decBytes": "0.00",
+          "decFixed": "-9999.99",
+          "uuid": "00000000-0000-0000-0000-000000000000",
+          "maybeDate": null
+        }
+      ]
+    },
+    {
+      "name": "resolution",
+      "writer": {
+        "type": "record",
+        "name": "Item",
+        "namespace": "interop",
+        "fields": [
+          {"name": "id", "type": "int"},
+          {"name": "name", "type": "string"},
+          {"name": "colour", "type": {"type": "enum", "name": "Colour", "symbols": ["RED", "GREEN", "BLUE"]}},
+          {"name": "gone", "type": {"type": "array", "items": "long"}},
+          {"name": "ratio", "type": "float"},
+          {"name": "note", "type": ["null", "string"]}
+        ]
+      },
+      "reader": {
+        "type": "record",
+        "name": "Item",
+        "namespace": "interop",
+        "fields": [
+          {"name": "name", "type": "string"},
+          {"name": "id", "type": "long"},
+          {
+            "name": "colour",
+            "type": {"type": "enum", "name": "Colour", "symbols": ["RED", "GREEN", "OTHER"], "default": "OTHER"}
+          },
+          {"name": "added", "type": "string", "default": "new"},
+          {"name": "ratio", "type": "double"},
+          {"name": "note", "type": ["null", "string"], "default": null},
+          {"name": "count", "type": ["int", "null"], "default": 7}
+        ]
+      },
+      "values": [
+        {"id": 1, "name": "one", "colour": "RED", "gone": [1, 2], "ratio": 0.5, "note": {"string": "n"}},
+        {"id": -2, "name": "two", "colour": "GREEN", "gone": [], "ratio": -2.0, "note": null}
+      ],
+      "expected": [
+        {"name": "one", "id": 1, "colour": "RED", "added": "new", "ratio": 0.5, "note": {"string": "n"}, "count": {"int": 7}},
+        {"name": "two", "id": -2, "colour": "GREEN", "added": "new", "ratio": -2.0, "note": null, "count": {"int": 7}}
+      ]
+    },
+    {
+      "name": "unions",
+      "writer": [
+        "null",
+        "string",
+        "long",
+        {"type": "record", "name": "interop.A", "fields": [{"name": "a", "type": "int"}]},
+        {"type": "record", "name": "interop.B", "fields": [{"name": "b", "type": "int"}]},
+        {"type": "map", "values": "boolean"}
+      ],
+      "values": [
+        null,
+        {"string": "s"},
+        {"long": 3},
+        {"interop.A": {"a": 1}},
+        {"interop.B": {"b": 2}},
+        {"map": {"t": true}}
+      ]
+    }
+  ]
+}

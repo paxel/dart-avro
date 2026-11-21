@@ -1,0 +1,3 @@
+# The Python avro package of the interop job (ADR 5), pinned with its hash.
+avro==1.12.2 \
+    --hash=sha256:bcbed5da65d298cb4ceb1e61f1a61b5b9fb180049c904f4045022338a95bf686
