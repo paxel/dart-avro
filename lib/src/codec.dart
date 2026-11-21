@@ -4,6 +4,7 @@ import 'binary.dart';
 import 'exceptions.dart';
 import 'limits.dart';
 import 'logical.dart';
+import 'resolve.dart';
 import 'schema.dart';
 
 /// A value of a union, with the branch it belongs to named explicitly.
@@ -29,12 +30,17 @@ final class Branch {
 
 /// Encodes and decodes values of one writer schema, read as one reader schema.
 final class AvroCodec {
-  /// A codec for data written with [writer]. [reader] defaults to [writer].
+  /// A codec for data written with [writer] and read as [reader], which defaults to
+  /// [writer]. The resolution of the two is compiled here, once; throws
+  /// [ResolutionException] if they do not resolve.
   AvroCodec({
     required this.writer,
     Schema? reader,
     this.limits = const AvroLimits(),
-  }) : reader = reader ?? writer;
+  }) : reader = reader ?? writer,
+       _plan = reader == null || identical(reader, writer)
+           ? null
+           : resolve(writer, reader);
 
   /// The schema data is encoded with.
   final Schema writer;
@@ -44,6 +50,9 @@ final class AvroCodec {
 
   /// The limits on the input this codec decodes.
   final AvroLimits limits;
+
+  /// How data of the writer schema is read as the reader schema; null when they are one.
+  final Plan? _plan;
 
   /// Encodes [value] with the writer schema.
   ///
@@ -71,8 +80,20 @@ void encodeInto(AvroCodec codec, BinaryWriter out, Object? value) =>
     _Encoder(out, codec.limits).encode(codec.writer, value, r'$', 0);
 
 /// Decodes one datum with [codec] from [input]; for this package's own framing.
-Object? decodeFrom(AvroCodec codec, BinaryReader input) =>
-    _Decoder(input, codec.limits).decode(codec.writer, r'$', 0);
+Object? decodeFrom(AvroCodec codec, BinaryReader input) {
+  final decoder = _Decoder(input, codec.limits);
+  final plan = codec._plan;
+  if (plan == null) return decoder.decode(codec.writer, r'$', 0);
+  return runPlan(
+    plan,
+    input,
+    decoder.decode,
+    decoder.blockCount,
+    decoder.checkDepth,
+    r'$',
+    0,
+  );
+}
 
 final class _Encoder {
   _Encoder(this.out, this.limits);
@@ -354,7 +375,7 @@ final class _Decoder {
     return count;
   }
 
-  Object? decode(Schema schema, String path, int depth) {
+  void checkDepth(String path, int depth) {
     final maxDepth = limits.maxValueDepth;
     if (maxDepth != null && depth > maxDepth) {
       throw LimitExceededException(
@@ -362,6 +383,10 @@ final class _Decoder {
         limit: 'maxValueDepth',
       );
     }
+  }
+
+  Object? decode(Schema schema, String path, int depth) {
+    checkDepth(path, depth);
     final logical = logicalOf(schema);
     if (logical == null) return decodeRaw(schema, path, depth);
     final start = input.offset;
