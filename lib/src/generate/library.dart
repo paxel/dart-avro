@@ -10,31 +10,92 @@ import '../logical.dart';
 import '../schema.dart';
 import 'naming.dart';
 
-/// Why the generator stops: a message naming the file it concerns.
+/// Why the generator stops.
+///
+/// The [message] starts with the [SchemaSource.name] of the schema it concerns, as in
+/// `types/memo.avsc: the fields "a_b" and "aB" of "Memo" both give the Dart name aB`.
 final class GenerateException implements Exception {
+  /// An exception with [message].
   GenerateException(this.message);
 
+  /// What went wrong, starting with the name of the schema it concerns.
   final String message;
 
   @override
   String toString() => message;
 }
 
-/// A schema file: its path as given and its text.
-typedef SchemaFile = ({String path, String text});
+/// The text of one schema, as an `.avsc` file holds it, with the name it is known by.
+final class SchemaSource {
+  /// A schema [text] named [name], such as the path of its file.
+  const SchemaSource(this.name, this.text);
 
-/// The Dart library of the classes of every record and the enums of every enum in [files].
+  /// The name of the schema in the generated library's header and in messages.
+  final String name;
+
+  /// The JSON text of the schema. A record defined at its top keeps it exactly as its
+  /// `schemaJson`.
+  final String text;
+}
+
+/// The Dart library [generateDart] writes.
+final class GeneratedLibrary {
+  /// A library of [source] and the [warnings] given while writing it.
+  const GeneratedLibrary(this.source, this.warnings);
+
+  /// The Dart source of the library, not yet formatted: run `dart format` on it, or
+  /// `DartFormatter` of `package:dart_style`.
+  final String source;
+
+  /// What the generator warns about, such as a type defined twice with different docs.
+  final List<String> warnings;
+}
+
+final _namespace = RegExp(
+  r'^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$',
+);
+final _prefix = RegExp(r'^[A-Z][A-Za-z0-9]*$');
+
+/// Whether [namespace] is an Avro namespace and [prefix] an UpperCamelCase prefix, as
+/// [generateDart] takes them.
+bool isValidPrefix(String namespace, String prefix) =>
+    _namespace.hasMatch(namespace) && _prefix.hasMatch(prefix);
+
+/// The Dart library of an immutable class for every record and an enum for every enum in
+/// [sources], and of a sealed class for every union of two or more non-null branches in a
+/// record. The library imports `package:avro/avro.dart`.
 ///
-/// A full name defined in several files gets one Dart type when the definitions have the same
-/// canonical form; the first definition is used, and [warn] is told if the others differ in
-/// their docs or attributes. The types of a namespace in [prefixes] get its prefix before
-/// their names. Throws [GenerateException] if a file is not a valid schema, two definitions
-/// differ, or a name cannot be generated.
-String generateLibrary(
-  List<SchemaFile> files, {
+/// A full name defined in several sources gets one Dart type when the definitions have the
+/// same canonical form; the first definition is used, with a warning if another differs in
+/// its docs or attributes. The types of a namespace in [prefixes] get its prefix before their
+/// names, as `{'axt': 'Axt'}` gives `AxtDateTime`; a prefix that no type uses is warned about.
+///
+/// Throws [ArgumentError] if a key of [prefixes] is not a namespace or its value not an
+/// UpperCamelCase prefix. Throws [GenerateException] if a source is not a valid schema, two
+/// definitions of one name differ, or a Dart name cannot be generated or clashes with another.
+GeneratedLibrary generateDart(
+  List<SchemaSource> sources, {
   Map<String, String> prefixes = const {},
-  void Function(String message)? warn,
 }) {
+  for (final e in prefixes.entries) {
+    if (!isValidPrefix(e.key, e.value)) {
+      throw ArgumentError.value(
+        '${e.key}=${e.value}',
+        'prefixes',
+        'not a namespace and an UpperCamelCase prefix',
+      );
+    }
+  }
+  final warnings = <String>[];
+  final source = _generate(sources, prefixes, warnings.add);
+  return GeneratedLibrary(source, List.unmodifiable(warnings));
+}
+
+String _generate(
+  List<SchemaSource> files,
+  Map<String, String> prefixes,
+  void Function(String message) warn,
+) {
   final classes = <_Class>[];
   final first = <String, ({NamedSchema schema, String path})>{};
   final classOf = <NamedSchema, _Class>{};
@@ -45,20 +106,20 @@ String generateLibrary(
     try {
       root = Schema.parse(file.text, limits: AvroLimits.none);
     } on SchemaParseException catch (e) {
-      throw GenerateException('${file.path}: $e');
+      throw GenerateException('${file.name}: $e');
     }
     for (final named in _namedTypes(root)) {
       final earlier = first[named.fullName];
       if (earlier != null) {
         if (named.canonicalForm != earlier.schema.canonicalForm) {
           throw GenerateException(
-            '${file.path}: "${named.fullName}" is defined differently in '
+            '${file.name}: "${named.fullName}" is defined differently in '
             '${earlier.path}',
           );
         }
         if (_ownJson(named) != _ownJson(earlier.schema)) {
-          warn?.call(
-            '"${named.fullName}" in ${file.path} differs from ${earlier.path} in its '
+          warn(
+            '"${named.fullName}" in ${file.name} differs from ${earlier.path} in its '
             'docs or attributes; the definition in ${earlier.path} is used',
           );
         }
@@ -66,12 +127,12 @@ String generateLibrary(
         if (c != null) classOf[named] = c;
         continue;
       }
-      first[named.fullName] = (schema: named, path: file.path);
+      first[named.fullName] = (schema: named, path: file.name);
       if (named is FixedSchema) continue;
       final simple = className(named.name);
       if (simple == null) {
         throw GenerateException(
-          '${file.path}: the ${named.type} "${named.fullName}" has no Dart name',
+          '${file.name}: the ${named.type} "${named.fullName}" has no Dart name',
         );
       }
       final prefix = prefixes[named.namespace];
@@ -79,7 +140,7 @@ String generateLibrary(
       final name = '${prefix ?? ''}$simple';
       if (clashingTypeNames.contains(name)) {
         throw GenerateException(
-          '${file.path}: the Dart name $name of "${named.fullName}" would clash with '
+          '${file.name}: the Dart name $name of "${named.fullName}" would clash with '
           '$name of dart:core, dart:typed_data or package:avro; '
           '${_suggestion([named], prefixes)}',
         );
@@ -87,7 +148,7 @@ String generateLibrary(
       final other = classNames[name];
       if (other != null) {
         throw GenerateException(
-          '${file.path}: "${named.fullName}" and "${other.fullName}" '
+          '${file.name}: "${named.fullName}" and "${other.fullName}" '
           '(${first[other.fullName]!.path}) both give the Dart name $name; '
           '${_suggestion([named, other], prefixes)}',
         );
@@ -100,8 +161,8 @@ String generateLibrary(
             ? ''
             : identical(named, root)
             ? file.text
-            : _selfContained(named, file.path),
-        file.path,
+            : _selfContained(named, file.name),
+        file.name,
       );
       classes.add(c);
       classOf[named] = c;
@@ -109,9 +170,7 @@ String generateLibrary(
   }
   for (final namespace in prefixes.keys) {
     if (!usedPrefixes.contains(namespace)) {
-      warn?.call(
-        'no record or enum is in the namespace $namespace of --prefix',
-      );
+      warn('no record or enum is in the namespace $namespace of --prefix');
     }
   }
   final out = _Library(classOf);
@@ -401,13 +460,13 @@ final class _Library {
     return (name: name, schema: b, type: typeOf(b, name));
   }
 
-  String finish(List<SchemaFile> files) {
+  String finish(List<SchemaSource> files) {
     final out = StringBuffer()
       ..writeln('// Generated by avro:generate. Do not edit.')
       ..writeln('//')
       ..writeln('// From:');
     for (final f in files) {
-      out.writeln('// - ${f.path.replaceAll(r'\', '/')}');
+      out.writeln('// - ${f.name.replaceAll(r'\', '/')}');
     }
     out.writeln();
     if (usesTypedData) out.writeln("import 'dart:typed_data';");

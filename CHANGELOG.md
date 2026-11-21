@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `AvroFileReader` reads and `AvroFileWriter` writes container files compressed with `bzip2`, `xz` and `zstandard`, stopping decompression at the limits; `xz` blocks are written without being compressed ([avro-1027](https://github.com/paxel/dart-avro/issues/31)).
 - `AvroCodec.encodeJson` and `decodeJson`, and the same on `TypedCodec`, write and read Avro's JSON encoding, with `indent:` for indented output and resolution on decoding; a union is `null` or `{"<branch>": value}`, and `NaN` and the infinities are strings ([avro-1028](https://github.com/paxel/dart-avro/issues/32)).
 - `AvroCodec(decodeBranches: true)` decodes every union with two or more non-null branches into a `Branch` of the reader's branch, in `decode`, `decodeSingleObject`, `decodeJson`, the records of a container file and reader defaults, so a decoded value encodes back unchanged; `null` and a union of `null` and one other branch stay plain ([avro-1029](https://github.com/paxel/dart-avro/issues/33)).
+- `package:avro/generate.dart` makes the generator a library: `generateDart` takes schema texts as `SchemaSource`s and the prefixes, without files, and returns the unformatted Dart source and the warnings as a `GeneratedLibrary`, or throws `GenerateException`; `dart run avro:generate` is a wrapper around it ([avro-1031](https://github.com/paxel/dart-avro/issues/35)).
 
 ### Changed
 
