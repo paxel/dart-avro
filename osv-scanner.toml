@@ -15,3 +15,11 @@
 # license.ignore = true
 # effectiveUntil = 2027-05-14
 # reason = "..."
+
+[[PackageOverrides]]
+name = "avro"
+ecosystem = "PyPI"
+license.override = ["Apache-2.0"]
+effectiveUntil = 2027-05-21
+reason = """The interop job's Python avro (tool/interop/requirements.txt): deps.dev reports its \
+licence as non-standard; its LICENSE.txt in apache/avro is Apache-2.0."""
