@@ -3,6 +3,7 @@
 library;
 
 export 'src/container.dart' show AvroFileHeader, AvroFileReader, AvroFileWriter;
+export 'src/container_stream.dart' show AvroFileStreamReader;
 export 'src/codec.dart'
     show AvroCodec, Branch, SingleObjectEncoding, SingleObjectHeader;
 export 'src/exceptions.dart';

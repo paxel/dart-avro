@@ -1,7 +1,9 @@
 // The fuzz targets: the entry points that take untrusted input, AvroCodec.decode (with
-// single-object encoding), AvroCodec.decodeJson and AvroFileReader with its records. Any
-// input must either decode or throw an AvroException.
+// single-object encoding), AvroCodec.decodeJson, AvroFileReader with its records and
+// AvroFileStreamReader with its records. Any input must either decode or throw an
+// AvroException.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -87,6 +89,33 @@ FuzzFailure? fuzzOne(Uint8List input, List<AvroCodec> codecs) {
         final text = String.fromCharCodes(input);
         Schema.parse(text, limits: fuzzLimits);
       });
+}
+
+/// Runs [AvroFileStreamReader] on [input], in chunks whose sizes come from [input] itself,
+/// so that a kept input fails again the same way; returns the failure, or null.
+Future<FuzzFailure?> fuzzStream(Uint8List input) async {
+  Stream<List<int>> chunks() async* {
+    var at = 0;
+    while (at < input.length) {
+      final size = 1 + input[at] % 61;
+      final end = min(at + size, input.length);
+      yield Uint8List.sublistView(input, at, end);
+      at = end;
+    }
+  }
+
+  try {
+    final reader = await AvroFileStreamReader.open(
+      chunks(),
+      limits: fuzzLimits,
+    );
+    await reader.records().drain<void>().timeout(const Duration(seconds: 5));
+  } on AvroException {
+    // Rejected as it should be.
+  } on Object catch (e, s) {
+    return FuzzFailure('AvroFileStreamReader', input, e, s);
+  }
+  return null;
 }
 
 /// Valid inputs to mutate.

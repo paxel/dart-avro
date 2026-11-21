@@ -74,61 +74,9 @@ final class AvroFileHeader {
 final class AvroFileReader {
   AvroFileReader(Uint8List bytes, {this.limits = const AvroLimits()})
     : _bytes = bytes {
-    final input = BinaryReader(bytes);
-    for (final b in containerMagic) {
-      if (input.remaining == 0 || input.readByte() != b) {
-        throw const DecodeException(
-          'not an Avro container file: the magic "Obj" 1 is missing',
-          offset: 0,
-        );
-      }
-    }
-    final metadata = <String, Uint8List>{};
-    while (true) {
-      final start = input.offset;
-      var count = input.readLong();
-      if (count == 0) break;
-      if (count < 0) {
-        if (count == -0x8000000000000000) input.fail('invalid count', start);
-        count = -count;
-        input.readLength();
-      }
-      // Each entry takes at least two bytes: the lengths of its key and its value.
-      if (count > input.remaining ~/ 2) {
-        input.fail('declares $count metadata entries, more than fit', start);
-      }
-      for (var i = 0; i < count; i++) {
-        final key = input.readString();
-        metadata[key] = input.readBytes();
-      }
-    }
-    final syncMarker = input.readFixed(16);
-    final rawSchema = metadata['avro.schema'];
-    if (rawSchema == null) {
-      throw const DecodeException('the metadata has no avro.schema', offset: 4);
-    }
-    final String schemaJson;
-    final String compression;
-    try {
-      schemaJson = const Utf8Decoder().convert(rawSchema);
-      compression = switch (metadata['avro.codec']) {
-        null => 'null',
-        final v => const Utf8Decoder().convert(v),
-      };
-    } on FormatException {
-      throw const DecodeException(
-        'avro.schema or avro.codec is not UTF-8',
-        offset: 4,
-      );
-    }
-    if (!supportedCompressions.contains(compression)) {
-      throw UnsupportedCompressionException(
-        'blocks compressed with "$compression" cannot be read; only $_supportedNames',
-        compression: compression,
-      );
-    }
-    header = AvroFileHeader._(metadata, schemaJson, compression, syncMarker);
-    _blocksStart = input.offset;
+    final (header, blocksStart) = HeaderParser().parse(bytes);
+    this.header = header;
+    _blocksStart = blocksStart;
   }
 
   final Uint8List _bytes;
@@ -150,245 +98,391 @@ final class AvroFileReader {
   /// Iterating throws [DecodeException] for a malformed block, and [LimitExceededException]
   /// as soon as a block's decompressed size or the total exceeds [limits].
   Iterable<Object?> records([AvroCodec? codec]) sync* {
-    final fileSchema = Schema.parse(header.schemaJson, limits: limits);
-    if (codec != null &&
-        codec.writer.canonicalForm != fileSchema.canonicalForm) {
-      throw DecodeException(
-        'the codec writes the schema ${_hex(codec.writer.crc64)}, '
-        'but the file was written with ${_hex(fileSchema.crc64)}; '
-        "make the file's schema the codec's writer and yours its reader",
-        offset: 0,
-      );
-    }
-    final c = codec ?? AvroCodec(writer: fileSchema, limits: limits);
+    final blocks = BlockDecoder(
+      header.compression,
+      limits,
+      recordCodec(header, limits, codec),
+    );
     final input = BinaryReader(_bytes, _blocksStart);
-    var total = 0;
     while (input.remaining > 0) {
       final start = input.offset;
-      final count = input.readLong();
-      if (count < 0) input.fail('a block cannot hold $count records', start);
-      final size = input.readLength();
-      final dataStart = input.offset;
-      final data = Uint8List.sublistView(_bytes, dataStart, dataStart + size);
-      input.skip(size);
-      final sync = input.readFixed(16);
-      for (var i = 0; i < 16; i++) {
-        if (sync[i] != header.syncMarker[i]) {
-          input.fail(
-            'the sync marker after the block does not match',
-            input.offset - 16,
-          );
+      final (:count, :dataStart, :size) = readBlockFrame(
+        input,
+        header.syncMarker,
+      );
+      yield* blocks.decode(
+        count,
+        Uint8List.sublistView(_bytes, dataStart, dataStart + size),
+        start,
+        dataStart,
+      );
+    }
+  }
+}
+
+/// Reads the header of a container file, also from the start of a file that is still
+/// arriving: after an [InputUnderflow] from a partial input, [parse] can be called again
+/// with more of the same bytes and resumes after the last complete metadata entry.
+final class HeaderParser {
+  final _metadata = <String, Uint8List>{};
+  var _offset = 0;
+  var _magicRead = false;
+  var _entriesLeft = 0;
+
+  /// The header at the start of [bytes], up to [end], and the offset of the first block.
+  (AvroFileHeader, int) parse(
+    Uint8List bytes, {
+    int? end,
+    bool partial = false,
+  }) {
+    final input = BinaryReader(bytes, _offset, end, partial);
+    if (!_magicRead) {
+      const notAFile =
+          'not an Avro container file: the magic "Obj" 1 is missing';
+      for (final b in containerMagic) {
+        if (input.remaining == 0) input.short(1, notAFile, 0);
+        if (input.readByte() != b) {
+          throw const DecodeException(notAFile, offset: 0);
         }
       }
-      final block = switch (header.compression) {
-        'deflate' => _inflate(data, total, dataStart),
-        'snappy' => _unsnappy(data, total, dataStart),
-        'bzip2' || 'xz' || 'zstandard' => _unarchive(data, total, dataStart),
-        _ => _checkSize(data, total),
-      };
-      total += block.length;
-      final blockInput = BinaryReader(block);
-      final min = minEncodedSize(c.writer);
-      if (min > 0) {
-        if (count > block.length ~/ min) {
-          input.fail(
-            'the block declares $count records, more than it can hold',
+      _magicRead = true;
+      _offset = input.offset;
+    }
+    while (true) {
+      if (_entriesLeft == 0) {
+        final start = input.offset;
+        var count = input.readLong();
+        if (count == 0) break;
+        if (count < 0) {
+          if (count == -0x8000000000000000) input.fail('invalid count', start);
+          count = -count;
+          input.readLength();
+        }
+        // Each entry takes at least two bytes: the lengths of its key and its value.
+        if (count > input.remaining ~/ 2) {
+          input.short(
+            count > 1 << 52 ? 1 << 53 : count * 2,
+            'declares $count metadata entries, more than fit',
             start,
           );
         }
-      } else {
-        final max = limits.maxZeroSizeItems;
-        if (max != null && count > max) {
-          throw LimitExceededException(
-            'a block declares $count records of zero bytes, the limit is $max',
-            limit: 'maxZeroSizeItems',
-          );
-        }
+        _entriesLeft = count;
+        _offset = input.offset;
       }
-      for (var i = 0; i < count; i++) {
-        final Object? record;
-        try {
-          record = decodeFrom(c, blockInput);
-        } on DecodeException catch (e) {
-          throw DecodeException(
-            e.message,
-            offset: e.offset,
-            path: e.path,
-            blockOffset: start,
-          );
-        }
-        yield record;
-      }
-      if (blockInput.remaining != 0) {
-        input.fail(
-          'the block has ${blockInput.remaining} bytes left after its $count records',
-          start,
-        );
-      }
+      final key = input.readString();
+      _metadata[key] = input.readBytes();
+      _entriesLeft--;
+      _offset = input.offset;
     }
-  }
-
-  Uint8List _checkSize(Uint8List block, int total) {
-    _checkLength(block.length, total);
-    return block;
-  }
-
-  /// Throws if a block of [length] bytes after [total] bytes exceeds the limits.
-  void _checkLength(int length, int total) {
-    final maxBlock = limits.maxBlockBytes;
-    if (maxBlock != null && length > maxBlock) {
-      throw LimitExceededException(
-        'a block has $length bytes, the limit is $maxBlock',
-        limit: 'maxBlockBytes',
-      );
+    final syncMarker = input.readFixed(16);
+    final rawSchema = _metadata['avro.schema'];
+    if (rawSchema == null) {
+      throw const DecodeException('the metadata has no avro.schema', offset: 4);
     }
-    final maxTotal = limits.maxTotalBytes;
-    if (maxTotal != null && total + length > maxTotal) {
-      throw LimitExceededException(
-        'the blocks exceed $maxTotal bytes',
-        limit: 'maxTotalBytes',
-      );
-    }
-  }
-
-  /// `bzip2`, `xz` or `zstandard` through `archive`, with its checksums verified, stopped
-  /// as soon as the output exceeds the block limit or what is left of the total limit.
-  Uint8List _unarchive(Uint8List data, int total, int offset) {
-    final maxBlock = limits.maxBlockBytes;
-    final maxTotal = limits.maxTotalBytes;
-    final left = maxTotal == null ? null : maxTotal - total;
-    final blockBinds = maxBlock != null && (left == null || maxBlock <= left);
-    final max = blockBinds ? maxBlock : left;
-    final compression = header.compression;
-    final input = InputMemoryStream(data);
-    final output = OutputMemoryStream();
+    final String schemaJson;
+    final String compression;
     try {
-      final ok = switch (compression) {
-        'bzip2' => BZip2Decoder().decodeStream(
-          input,
-          output,
-          verify: true,
-          throwOnError: true,
-          maxOutputSize: max,
-        ),
-        'xz' =>
-          XZDecoder(
-            maxPreallocateSize: max == null || max > xzDefaultMaxPreallocateSize
-                ? null
-                : max,
-          ).decodeStream(
-            input,
-            output,
-            verify: true,
-            throwOnError: true,
-            maxOutputSize: max,
-          ),
-        _ => ZstdDecoder().decodeStream(
-          input,
-          output,
-          verify: true,
-          throwOnError: true,
-          maxOutputSize: max,
-        ),
+      schemaJson = const Utf8Decoder().convert(rawSchema);
+      compression = switch (_metadata['avro.codec']) {
+        null => 'null',
+        final v => const Utf8Decoder().convert(v),
       };
-      if (!ok) {
-        throw DecodeException(
-          'the block is not valid $compression',
-          offset: offset,
-        );
-      }
-    } on ArchiveLimitException catch (e) {
-      // archive's own caps, such as a zstandard window over 128 MiB, are not ours.
-      if (max == null || !e.message.startsWith('The decoded data is larger')) {
-        throw DecodeException(
-          'the block needs more memory than the $compression decoder allows: ${e.message}',
-          offset: offset,
-        );
-      }
-      throw blockBinds
-          ? LimitExceededException(
-              'a block decompresses beyond $max bytes',
-              limit: 'maxBlockBytes',
-            )
-          : LimitExceededException(
-              'the blocks decompress beyond $maxTotal bytes',
-              limit: 'maxTotalBytes',
-            );
-    } on FormatException catch (e) {
-      throw DecodeException(
-        'the block is not valid $compression: ${e.message}',
-        offset: offset,
+    } on FormatException {
+      throw const DecodeException(
+        'avro.schema or avro.codec is not UTF-8',
+        offset: 4,
       );
     }
-    return output.getBytes();
-  }
-
-  /// Snappy, followed by the big-endian CRC32 of the uncompressed block. The declared
-  /// length is checked against the limits before the block is allocated.
-  Uint8List _unsnappy(Uint8List data, int total, int offset) {
-    if (data.length < 4) {
-      throw DecodeException(
-        'a snappy block has ${data.length} bytes, too few for its CRC32',
-        offset: offset,
+    if (!supportedCompressions.contains(compression)) {
+      throw UnsupportedCompressionException(
+        'blocks compressed with "$compression" cannot be read; only $_supportedNames',
+        compression: compression,
       );
     }
-    final crcAt = data.length - 4;
-    final block = snappyDecompress(
-      Uint8List.sublistView(data, 0, crcAt),
-      (length) => _checkLength(length, total),
-      offset,
+    final header = AvroFileHeader._(
+      _metadata,
+      schemaJson,
+      compression,
+      syncMarker,
     );
-    if (crc32(block) != ByteData.sublistView(data, crcAt).getUint32(0)) {
-      throw DecodeException(
-        'the CRC32 after the snappy block does not match its data',
-        offset: offset + crcAt,
+    return (header, input.offset);
+  }
+}
+
+/// The codec that decodes the records of a file with [header]: [codec], or one of the
+/// file's schema when [codec] is null. Throws [DecodeException] if [codec]'s writer schema
+/// is not the file's.
+AvroCodec recordCodec(
+  AvroFileHeader header,
+  AvroLimits limits,
+  AvroCodec? codec,
+) {
+  final fileSchema = Schema.parse(header.schemaJson, limits: limits);
+  if (codec != null && codec.writer.canonicalForm != fileSchema.canonicalForm) {
+    throw DecodeException(
+      'the codec writes the schema ${_hex(codec.writer.crc64)}, '
+      'but the file was written with ${_hex(fileSchema.crc64)}; '
+      "make the file's schema the codec's writer and yours its reader",
+      offset: 0,
+    );
+  }
+  return codec ?? AvroCodec(writer: fileSchema, limits: limits);
+}
+
+/// Reads the frame of the block at [input]'s offset, up to and including its sync marker,
+/// which must be [syncMarker]: its record count, and where its data starts and how long it
+/// is. [checkSize] sees the declared size of the data before it is compared with the input.
+({int count, int dataStart, int size}) readBlockFrame(
+  BinaryReader input,
+  Uint8List syncMarker, [
+  void Function(int size)? checkSize,
+]) {
+  final start = input.offset;
+  final count = input.readLong();
+  if (count < 0) input.fail('a block cannot hold $count records', start);
+  final size = input.readLength(checkSize);
+  final dataStart = input.offset;
+  input.skip(size);
+  final sync = input.readFixed(16);
+  for (var i = 0; i < 16; i++) {
+    if (sync[i] != syncMarker[i]) {
+      input.fail(
+        'the sync marker after the block does not match',
+        input.offset - 16,
       );
     }
-    return block;
   }
+  return (count: count, dataStart: dataStart, size: size);
+}
 
-  /// Raw DEFLATE, stopped as soon as the output exceeds a limit.
-  Uint8List _inflate(Uint8List data, int total, int offset) {
-    final out = _LimitedSink(this, total);
-    final sink = ZLibDecoder(raw: true).startChunkedConversion(out);
-    try {
-      const chunk = 4096;
-      for (var i = 0; i < data.length; i += chunk) {
-        sink.add(
-          Uint8List.sublistView(
-            data,
-            i,
-            i + chunk < data.length ? i + chunk : data.length,
-          ),
+/// Decompresses and decodes the blocks of one file, in order, within [limits].
+final class BlockDecoder {
+  BlockDecoder(this.compression, this.limits, this.codec);
+
+  final String compression;
+  final AvroLimits limits;
+  final AvroCodec codec;
+  int _total = 0;
+
+  /// The [count] records of the block whose frame starts at the file offset [start] and
+  /// whose [data] starts at the file offset [dataStart], decoded lazily.
+  Iterable<Object?> decode(
+    int count,
+    Uint8List data,
+    int start,
+    int dataStart,
+  ) sync* {
+    final block = switch (compression) {
+      'deflate' => _inflate(limits, data, _total, dataStart),
+      'snappy' => _unsnappy(limits, data, _total, dataStart),
+      'bzip2' ||
+      'xz' ||
+      'zstandard' => _unarchive(compression, limits, data, _total, dataStart),
+      _ => _checkSize(limits, data, _total),
+    };
+    _total += block.length;
+    final blockInput = BinaryReader(block);
+    final min = minEncodedSize(codec.writer);
+    if (min > 0) {
+      if (count > block.length ~/ min) {
+        throw DecodeException(
+          'the block declares $count records, more than it can hold',
+          offset: start,
         );
       }
-      sink.close();
-    } on LimitExceededException {
-      rethrow;
-    } on Exception catch (e) {
+    } else {
+      final max = limits.maxZeroSizeItems;
+      if (max != null && count > max) {
+        throw LimitExceededException(
+          'a block declares $count records of zero bytes, the limit is $max',
+          limit: 'maxZeroSizeItems',
+        );
+      }
+    }
+    for (var i = 0; i < count; i++) {
+      final Object? record;
+      try {
+        record = decodeFrom(codec, blockInput);
+      } on DecodeException catch (e) {
+        throw DecodeException(
+          e.message,
+          offset: e.offset,
+          path: e.path,
+          blockOffset: start,
+        );
+      }
+      yield record;
+    }
+    if (blockInput.remaining != 0) {
       throw DecodeException(
-        'the block is not valid DEFLATE: $e',
+        'the block has ${blockInput.remaining} bytes left after its $count records',
+        offset: start,
+      );
+    }
+  }
+}
+
+Uint8List _checkSize(AvroLimits limits, Uint8List block, int total) {
+  _checkLength(limits, block.length, total);
+  return block;
+}
+
+/// Throws if a block of [length] bytes after [total] bytes exceeds the limits.
+void _checkLength(AvroLimits limits, int length, int total) {
+  final maxBlock = limits.maxBlockBytes;
+  if (maxBlock != null && length > maxBlock) {
+    throw LimitExceededException(
+      'a block has $length bytes, the limit is $maxBlock',
+      limit: 'maxBlockBytes',
+    );
+  }
+  final maxTotal = limits.maxTotalBytes;
+  if (maxTotal != null && total + length > maxTotal) {
+    throw LimitExceededException(
+      'the blocks exceed $maxTotal bytes',
+      limit: 'maxTotalBytes',
+    );
+  }
+}
+
+/// `bzip2`, `xz` or `zstandard` through `archive`, with its checksums verified, stopped
+/// as soon as the output exceeds the block limit or what is left of the total limit.
+Uint8List _unarchive(
+  String compression,
+  AvroLimits limits,
+  Uint8List data,
+  int total,
+  int offset,
+) {
+  final maxBlock = limits.maxBlockBytes;
+  final maxTotal = limits.maxTotalBytes;
+  final left = maxTotal == null ? null : maxTotal - total;
+  final blockBinds = maxBlock != null && (left == null || maxBlock <= left);
+  final max = blockBinds ? maxBlock : left;
+  final input = InputMemoryStream(data);
+  final output = OutputMemoryStream();
+  try {
+    final ok = switch (compression) {
+      'bzip2' => BZip2Decoder().decodeStream(
+        input,
+        output,
+        verify: true,
+        throwOnError: true,
+        maxOutputSize: max,
+      ),
+      'xz' =>
+        XZDecoder(
+          maxPreallocateSize: max == null || max > xzDefaultMaxPreallocateSize
+              ? null
+              : max,
+        ).decodeStream(
+          input,
+          output,
+          verify: true,
+          throwOnError: true,
+          maxOutputSize: max,
+        ),
+      _ => ZstdDecoder().decodeStream(
+        input,
+        output,
+        verify: true,
+        throwOnError: true,
+        maxOutputSize: max,
+      ),
+    };
+    if (!ok) {
+      throw DecodeException(
+        'the block is not valid $compression',
         offset: offset,
       );
     }
-    return out.bytes.takeBytes();
+  } on ArchiveLimitException catch (e) {
+    // archive's own caps, such as a zstandard window over 128 MiB, are not ours.
+    if (max == null || !e.message.startsWith('The decoded data is larger')) {
+      throw DecodeException(
+        'the block needs more memory than the $compression decoder allows: ${e.message}',
+        offset: offset,
+      );
+    }
+    throw blockBinds
+        ? LimitExceededException(
+            'a block decompresses beyond $max bytes',
+            limit: 'maxBlockBytes',
+          )
+        : LimitExceededException(
+            'the blocks decompress beyond $maxTotal bytes',
+            limit: 'maxTotalBytes',
+          );
+  } on FormatException catch (e) {
+    throw DecodeException(
+      'the block is not valid $compression: ${e.message}',
+      offset: offset,
+    );
   }
+  return output.getBytes();
+}
+
+/// Snappy, followed by the big-endian CRC32 of the uncompressed block. The declared
+/// length is checked against the limits before the block is allocated.
+Uint8List _unsnappy(AvroLimits limits, Uint8List data, int total, int offset) {
+  if (data.length < 4) {
+    throw DecodeException(
+      'a snappy block has ${data.length} bytes, too few for its CRC32',
+      offset: offset,
+    );
+  }
+  final crcAt = data.length - 4;
+  final block = snappyDecompress(
+    Uint8List.sublistView(data, 0, crcAt),
+    (length) => _checkLength(limits, length, total),
+    offset,
+  );
+  if (crc32(block) != ByteData.sublistView(data, crcAt).getUint32(0)) {
+    throw DecodeException(
+      'the CRC32 after the snappy block does not match its data',
+      offset: offset + crcAt,
+    );
+  }
+  return block;
+}
+
+/// Raw DEFLATE, stopped as soon as the output exceeds a limit.
+Uint8List _inflate(AvroLimits limits, Uint8List data, int total, int offset) {
+  final out = _LimitedSink(limits, total);
+  final sink = ZLibDecoder(raw: true).startChunkedConversion(out);
+  try {
+    const chunk = 4096;
+    for (var i = 0; i < data.length; i += chunk) {
+      sink.add(
+        Uint8List.sublistView(
+          data,
+          i,
+          i + chunk < data.length ? i + chunk : data.length,
+        ),
+      );
+    }
+    sink.close();
+  } on LimitExceededException {
+    rethrow;
+  } on Exception catch (e) {
+    throw DecodeException('the block is not valid DEFLATE: $e', offset: offset);
+  }
+  return out.bytes.takeBytes();
 }
 
 String _hex(int fingerprint) =>
     '0x${BigInt.from(fingerprint).toUnsigned(64).toRadixString(16).padLeft(16, '0')}';
 
 final class _LimitedSink implements Sink<List<int>> {
-  _LimitedSink(this.reader, this.total);
+  _LimitedSink(this.limits, this.total);
 
-  final AvroFileReader reader;
+  final AvroLimits limits;
   final int total;
   final BytesBuilder bytes = BytesBuilder(copy: true);
 
   @override
   void add(List<int> chunk) {
     bytes.add(chunk);
-    final limits = reader.limits;
     final maxBlock = limits.maxBlockBytes;
     if (maxBlock != null && bytes.length > maxBlock) {
       throw LimitExceededException(
