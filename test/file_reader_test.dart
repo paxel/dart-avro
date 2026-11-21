@@ -142,6 +142,59 @@ void main() {
     );
   });
 
+  group("the codec's writer schema", () {
+    final bytes = file(
+      schema: '{"type": "record", "name": "R", "fields": [{"name": "a", "type": "int"}]}',
+      blocks: [
+        (1, [2]),
+      ],
+    );
+
+    test('another schema is rejected before the first record', () {
+      final other = AvroCodec(writer: Schema.parse('"int"'));
+      expect(
+        () => AvroFileReader(bytes).records(other).toList(),
+        throwsA(
+          isA<DecodeException>().having(
+            (e) => e.message,
+            'message',
+            contains('0x'),
+          ),
+        ),
+      );
+    });
+
+    test('the same canonical form in another text is accepted', () {
+      final same = AvroCodec(
+        writer: Schema.parse(
+          '{"name": "R", "doc": "d", "type": "record", "fields": [{"type": "int", "name": "a"}]}',
+        ),
+      );
+      expect(AvroFileReader(bytes).records(same).toList(), [
+        {'a': 1},
+      ]);
+    });
+
+    test(
+      "a resolving codec with the file's writer reads the reader's shape",
+      () {
+        final writer = Schema.parse(AvroFileReader(bytes).header.schemaJson);
+        final reader = Schema.parse(
+          '{"type": "record", "name": "R", "fields": [{"name": "a", "type": "long"}, '
+          '{"name": "b", "type": "string", "default": "x"}]}',
+        );
+        expect(
+          AvroFileReader(bytes)
+              .records(AvroCodec(writer: writer, reader: reader))
+              .toList(),
+          [
+            {'a': 1, 'b': 'x'},
+          ],
+        );
+      },
+    );
+  });
+
   group('rejected', () {
     test('a file without the magic', () {
       expect(
