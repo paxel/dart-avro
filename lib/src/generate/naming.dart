@@ -160,10 +160,27 @@ String _capitalized(String word) =>
 final _lowerCamel = RegExp(r'^[a-z][a-zA-Z0-9]*$');
 final _upperCamel = RegExp(r'^[A-Z][a-zA-Z0-9]*$');
 
+/// The names an enum value cannot take: the members of a generated enum.
+const _takenByEnums = {
+  'values',
+  'index',
+  'name',
+  'symbol',
+  'fromSymbol',
+  'compareTo',
+};
+
 /// The Dart name of an Avro field: lowerCamelCase, with a `$` suffix where the name is a
 /// reserved word or taken by the generated class. Null if the name has no letter to start
 /// with.
-String? fieldName(String avroName) {
+String? fieldName(String avroName) => _memberName(avroName, _takenNames);
+
+/// The Dart name of an Avro enum symbol, as [fieldName] gives it, with a `$` suffix also
+/// where the name is taken by the generated enum.
+String? enumValueName(String symbol) =>
+    _memberName(symbol, {..._takenNames, ..._takenByEnums});
+
+String? _memberName(String avroName, Set<String> taken) {
   String name;
   if (_lowerCamel.hasMatch(avroName)) {
     name = avroName;
@@ -176,7 +193,7 @@ String? fieldName(String avroName) {
     ].join();
   }
   if (!_lowerCamel.hasMatch(name)) return null;
-  return _reservedWords.contains(name) || _takenNames.contains(name)
+  return _reservedWords.contains(name) || taken.contains(name)
       ? '$name\$'
       : name;
 }

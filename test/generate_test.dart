@@ -25,7 +25,12 @@ const _all = r'''
   {"name": "text", "type": "string"},
   {"name": "raw", "type": "bytes"},
   {"name": "hash", "type": {"type": "fixed", "name": "Hash", "size": 4}},
-  {"name": "color", "type": {"type": "enum", "name": "Color", "symbols": ["RED", "GREEN"]}},
+  {"name": "color", "type": {"type": "enum", "name": "Color", "doc": "A colour.", "symbols": ["RED", "GREEN"]}},
+  {"name": "maybe_color", "type": ["null", "Color"]},
+  {"name": "colors", "type": {"type": "array", "items": "Color"}},
+  {"name": "color_map", "type": {"type": "map", "values": ["null", "Color"]}},
+  {"name": "odd", "type": {"type": "enum", "name": "odd_names",
+    "symbols": ["class", "values", "index", "name", "symbol", "DEVICE_ADD", "HTTPCode"]}},
   {"name": "numbers", "type": {"type": "array", "items": "int"}},
   {"name": "grid", "type": {"type": "array", "items": {"type": "array", "items": "long"}}},
   {"name": "labels", "type": {"type": "map", "values": "string"}},
@@ -175,7 +180,11 @@ void main() {
     text: 'Grüße',
     raw: bytes([0, 1, 255]),
     hash: bytes([1, 2, 3, 4]),
-    color: 'GREEN',
+    color: Color.green,
+    maybeColor: Color.red,
+    colors: [Color.green, Color.red],
+    colorMap: {'g': Color.green, 'none': null},
+    odd: OddNames.deviceAdd,
     numbers: [1, 2, 3],
     grid: [[1, 2], [], [3]],
     labels: {'a': 'x', 'b': 'y'},
@@ -231,6 +240,10 @@ void main() {
     'raw': bytes([0, 1, 255]),
     'hash': bytes([1, 2, 3, 4]),
     'color': 'GREEN',
+    'maybe_color': 'RED',
+    'colors': ['GREEN', 'RED'],
+    'color_map': {'g': 'GREEN', 'none': null},
+    'odd': 'DEVICE_ADD',
     'numbers': [1, 2, 3],
     'grid': [[1, 2], <Object?>[], [3]],
     'labels': {'a': 'x', 'b': 'y'},
@@ -300,6 +313,24 @@ void main() {
   roundTrip('bag', Bag.avroType, Bag(items: bytes([1, 2])), {'items': bytes([1, 2])});
   check('bag hash', Bag(items: bytes([1, 2])).hashCode == Bag(items: bytes([1, 2])).hashCode);
   roundTrip('void', Void.avroType, const Void(), {'nothing': null});
+  check('enum values', OddNames.values.map((v) => v.name).join(' ') ==
+      r'class$ values$ index$ name$ symbol$ deviceAdd httpCode');
+  check('enum symbols', OddNames.values.map((v) => v.symbol).join(' ') ==
+      'class values index name symbol DEVICE_ADD HTTPCode');
+  check('fromSymbol', OddNames.fromSymbol('HTTPCode') == OddNames.httpCode);
+  try {
+    OddNames.fromSymbol('NOPE');
+    check('fromSymbol of an unknown symbol throws', false);
+  } on ArgumentError {
+    check('fromSymbol of an unknown symbol throws', true);
+  }
+  roundTrip('paint', Paint.avroType, const Paint(shade: Shade.dark), {'shade': 'DARK'});
+  // A writer symbol the reader does not know decodes to the reader's default.
+  final newer = Schema.parse('{"type": "record", "name": "Paint", "fields": [{"name": "shade", '
+      '"type": {"type": "enum", "name": "Shade", "symbols": ["LIGHT", "DARK", "NEON"]}}]}');
+  final neon = AvroCodec(writer: newer).encode({'shade': 'NEON'});
+  check('a reader enum default', TypedCodec(Paint.avroType, writer: newer).decode(neon) ==
+      const Paint(shade: Shade.light));
   roundTrip('minimal', Minimal.avroType, const Minimal(name: 'n', count: 1), {'name': 'n', 'count': 1});
 
   check('deep equality', all() == all() && all().hashCode == all().hashCode);
@@ -355,6 +386,11 @@ void main() {
       '{"type": "record", "name": "Bag", "fields": [{"name": "items", "type": "bytes"}]}',
     );
     write(
+      'more/paint.avsc',
+      '{"type": "record", "name": "Paint", "fields": [{"name": "shade", "type": '
+          '{"type": "enum", "name": "Shade", "symbols": ["LIGHT", "DARK"], "default": "LIGHT"}}]}',
+    );
+    write(
       'more/void.avsc',
       '{"type": "record", "name": "Void", "fields": [{"name": "nothing", "type": "null"}]}',
     );
@@ -396,6 +432,7 @@ void main() {
         '// - ${_dir.path}/more/bag.avsc\n'
         '// - ${_dir.path}/more/empty.avsc\n'
         '// - ${_dir.path}/more/loose.avsc\n'
+        '// - ${_dir.path}/more/paint.avsc\n'
         '// - ${_dir.path}/more/void.avsc\n'
         '// - ${_dir.path}/more/wide.avsc\n',
       ),
@@ -406,6 +443,7 @@ void main() {
     );
     expect(library, contains('  /// Its value.\n  final int value;'));
     expect(library, contains('final int class\$;'));
+    expect(library, contains('/// A colour.\nenum Color {'));
     expect(library, isNot(contains('ignore')));
     // A field of the type null has no Dart field; its generic value is null.
     expect(library, isNot(contains(' nothing;')));
@@ -506,6 +544,17 @@ void main() {
       expect(
         await fails(1, [a, again, '-o', output]),
         allOf(contains(again), contains('already defined in $a')),
+      );
+    });
+
+    test('two symbols with the same Dart name', () async {
+      final file = schema(
+        'symbols.avsc',
+        '{"type": "enum", "name": "E", "symbols": ["A_B", "aB"]}',
+      );
+      expect(
+        await fails(1, [file, '-o', output]),
+        allOf(contains(file), contains('"A_B" and "aB"'), contains('"E"')),
       );
     });
 

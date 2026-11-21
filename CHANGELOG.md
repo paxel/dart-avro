@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `dart run avro:generate <schemas…> -o <file>` generates immutable Dart classes for the records of `.avsc` files, with value equality, `copyWith` and an `avroType` for `TypedCodec`.
+- `dart run avro:generate <schemas…> -o <file>` generates immutable Dart classes for the records of `.avsc` files, with value equality, `copyWith` and an `avroType` for `TypedCodec`, and Dart enums for Avro enums, each value with its `symbol`.
 - `TypedCodec<T>` encodes and decodes Dart classes described by an `AvroType<T>` (the schema text, `toAvro` and `fromAvro`), with the resolution and single-object encoding of `AvroCodec`.
 - `DecodeException.blockOffset` says where in a container file the block of a failing record starts; `offset` counts inside the decompressed block.
 

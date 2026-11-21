@@ -23,12 +23,12 @@ final class GenerateException implements Exception {
 /// A schema file: its path as given and its text.
 typedef SchemaFile = ({String path, String text});
 
-/// The Dart library of the classes of every record in [files]. Throws [GenerateException]
+/// The Dart library of the classes of every record and the enums of every enum in [files]. Throws [GenerateException]
 /// if a file is not a valid schema or a name cannot be generated.
 String generateLibrary(List<SchemaFile> files) {
   final classes = <_Class>[];
   final definedIn = <String, String>{};
-  final classOf = <RecordSchema, _Class>{};
+  final classOf = <NamedSchema, _Class>{};
   final classNames = <String, NamedSchema>{};
   for (final file in files) {
     final Schema root;
@@ -45,11 +45,11 @@ String generateLibrary(List<SchemaFile> files) {
         );
       }
       definedIn[named.fullName] = file.path;
-      if (named is! RecordSchema) continue;
+      if (named is FixedSchema) continue;
       final name = className(named.name);
       if (name == null) {
         throw GenerateException(
-          '${file.path}: the record "${named.fullName}" has no Dart class name',
+          '${file.path}: the ${named.type} "${named.fullName}" has no Dart name',
         );
       }
       if (clashingTypeNames.contains(name)) {
@@ -70,7 +70,11 @@ String generateLibrary(List<SchemaFile> files) {
       final c = _Class(
         named,
         name,
-        identical(named, root) ? file.text : _selfContained(named, file.path),
+        named is! RecordSchema
+            ? ''
+            : identical(named, root)
+            ? file.text
+            : _selfContained(named, file.path),
         file.path,
       );
       classes.add(c);
@@ -79,7 +83,13 @@ String generateLibrary(List<SchemaFile> files) {
   }
   final out = _Library(classOf);
   for (final c in classes) {
-    out.writeClass(c);
+    switch (c.schema) {
+      case final RecordSchema schema:
+        out.writeClass(c, schema);
+      case final EnumSchema schema:
+        out.writeEnum(c, schema);
+      case FixedSchema():
+    }
   }
   return out.finish(files);
 }
@@ -179,8 +189,11 @@ String _selfContained(NamedSchema type, String path) {
 final class _Class {
   _Class(this.schema, this.name, this.schemaJson, this.path);
 
-  final RecordSchema schema;
+  /// A record or an enum.
+  final NamedSchema schema;
   final String name;
+
+  /// The JSON text of a record's schema; empty for an enum, which has no descriptor.
   final String schemaJson;
   final String path;
 }
@@ -208,7 +221,7 @@ final class _Field {
 final class _Library {
   _Library(this.classOf);
 
-  final Map<RecordSchema, _Class> classOf;
+  final Map<NamedSchema, _Class> classOf;
   final StringBuffer body = StringBuffer();
   bool usesTypedData = false;
   bool usesDeep = false;
@@ -264,7 +277,7 @@ final class _Library {
       case PrimitiveSchema():
         throw StateError('unknown primitive ${s.type}');
       case EnumSchema():
-        return 'String';
+        return classOf[s]!.name;
       case ArraySchema(:final items):
         return 'List<${typeOf(items)}>';
       case MapSchema(:final values):
@@ -301,7 +314,9 @@ final class _Library {
         return inner == null
             ? null
             : 'switch ($e) { final $v? => $inner, null => null }';
-      case PrimitiveSchema() || EnumSchema() || FixedSchema():
+      case EnumSchema():
+        return '$e.symbol';
+      case PrimitiveSchema() || FixedSchema():
         return null;
     }
   }
@@ -328,20 +343,72 @@ final class _Library {
         final v = 'v$depth';
         return 'switch ($e) { final $v? => ${fromAvro(branch, v, depth + 1)}, '
             'null => null }';
-      case PrimitiveSchema() || EnumSchema() || FixedSchema():
+      case EnumSchema():
+        return '${classOf[s]!.name}.fromSymbol($e as String)';
+      case PrimitiveSchema() || FixedSchema():
         return '$e as ${typeOf(s)}';
     }
   }
 
   /// Whether [fromAvro] of [s] is a cast.
   bool _isCast(Schema s) =>
-      logicalOf(s) != null ||
-      s is PrimitiveSchema ||
-      s is EnumSchema ||
-      s is FixedSchema;
+      logicalOf(s) != null || s is PrimitiveSchema || s is FixedSchema;
 
-  void writeClass(_Class c) {
-    final schema = c.schema;
+  void writeEnum(_Class c, EnumSchema schema) {
+    if (schema.symbols.isEmpty) {
+      throw GenerateException(
+        '${c.path}: the enum "${schema.fullName}" has no symbols, and a Dart enum needs one',
+      );
+    }
+    final n = c.name;
+    final names = <String, String>{};
+    for (final symbol in schema.symbols) {
+      final name = enumValueName(symbol);
+      if (name == null) {
+        throw GenerateException(
+          '${c.path}: the symbol "$symbol" of "${schema.fullName}" has no Dart name',
+        );
+      }
+      final other = names.entries.where((e) => e.value == name).firstOrNull;
+      if (other != null) {
+        throw GenerateException(
+          '${c.path}: the symbols "${other.key}" and "$symbol" of '
+          '"${schema.fullName}" both give the Dart name $name',
+        );
+      }
+      names[symbol] = name;
+    }
+    final b = body;
+    _doc(b, schema.doc, '');
+    b.writeln('enum $n {');
+    final values = [for (final e in names.entries) "  ${e.value}('${e.key}')"]
+        .join(',\n');
+    b.writeln('$values;');
+    b
+      ..writeln()
+      ..writeln('  const $n(this.symbol);')
+      ..writeln()
+      ..writeln('  /// The Avro symbol of the value.')
+      ..writeln('  final String symbol;')
+      ..writeln()
+      ..writeln(
+        '  /// The value of the Avro symbol [symbol]. Throws [ArgumentError] for any '
+        'other string.',
+      )
+      ..writeln('  static $n fromSymbol(String symbol) => switch (symbol) {');
+    for (final e in names.entries) {
+      b.writeln("    '${e.key}' => ${e.value},");
+    }
+    b
+      ..writeln(
+        "    _ => throw ArgumentError.value(symbol, 'symbol', 'not a symbol of $n'),",
+      )
+      ..writeln('  };')
+      ..writeln('}')
+      ..writeln();
+  }
+
+  void writeClass(_Class c, RecordSchema schema) {
     final fields = <_Field>[];
     final byName = <String, Field>{};
     for (final f in schema.fields) {
