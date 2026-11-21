@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Every logical type of Avro 1.12 decodes to a Dart value: `DateTime`, `Duration` and `String` where they fit, `AvroDate`, `AvroLocalTimestamp`, `AvroTimestampNanos`, `AvroDecimal` and `AvroDuration` where Dart has none.
 - `AvroCodec(writer:, reader:)` reads data of one schema as another by Avro's schema resolution, compiled once when the codec is made; schemas that do not resolve throw `ResolutionException`.
 - Single-object encoding: `encodeSingleObject`, `decodeSingleObject`, and `SingleObjectHeader.parse` to read a message's fingerprint before choosing its codec.
+- `AvroFileReader` reads object container files compressed with `null` or `deflate`: the header first, then the records lazily, one block at a time, with the file's schema or a codec of the caller's choice.
 - Union values whose branch is ambiguous are written with `Branch`.
 - `AvroLimits` bounds schema size, schema and value nesting, and empty-item counts, with finite defaults.
 

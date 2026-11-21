@@ -9,3 +9,9 @@ repository's notice.
 |--------------------|-------------------------------------|
 | `interop.avsc`     | `share/test/schemas/interop.avsc`   |
 | `schema-tests.txt` | `share/test/data/schema-tests.txt`  |
+| `weather.avro`     | `share/test/data/weather.avro`      |
+| `weather.json`     | `share/test/data/weather.json`      |
+| `syncInMeta.avro`  | `share/test/data/syncInMeta.avro`   |
+
+`weather-deflate.avro` is not in that tag; it is copied from `share/test/data/weather-deflate.avro`
+at commit `54b332161524086dcb6cde8afe097097eed7f3ee` (AVRO-4172).
