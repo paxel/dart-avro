@@ -4,6 +4,8 @@ library;
 
 export 'src/codec.dart' show AvroCodec, Branch;
 export 'src/exceptions.dart';
+export 'src/fingerprint.dart'
+    show SchemaFingerprints, crc64Avro, crc64FromBytes, crc64ToBytes;
 export 'src/limits.dart';
 export 'src/schema.dart'
     show

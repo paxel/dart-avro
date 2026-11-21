@@ -5,6 +5,7 @@ https://github.com/apache/avro, tag `release-1.12.2`. They are licensed under th
 License, Version 2.0 ([LICENSE-APACHE](../../../LICENSE-APACHE)); `NOTICE.txt` is the
 repository's notice.
 
-| File           | Source path                         |
-|----------------|-------------------------------------|
-| `interop.avsc` | `share/test/schemas/interop.avsc`   |
+| File               | Source path                         |
+|--------------------|-------------------------------------|
+| `interop.avsc`     | `share/test/schemas/interop.avsc`   |
+| `schema-tests.txt` | `share/test/data/schema-tests.txt`  |
