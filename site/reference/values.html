@@ -1,4 +1,4 @@
-<!-- page: title="Value mapping" track="reference" order=1 summary="Every Avro type and logical type and the Dart value encode accepts and decode returns, with the exact behaviour at the edges: uuid case, lost precision, out-of-range timestamps." -->
+<!-- page: title="Value mapping" track="reference" order=1 summary="Every Avro type and logical type and the Dart value encode accepts and decode returns, with the exact behaviour at the edges: uuid case, lost precision, out-of-range timestamps; and the Dart types of generated code." -->
 <p class="lede">
   The Dart value of every Avro type and logical type, for <code>encode</code> and for
   <code>decode</code>. A value that does not fit throws <code>EncodeException</code>; bytes that do
@@ -147,3 +147,39 @@
   type becomes its Dart value. See <a href="../guide/schemas.html#defaults-as-dart-values">Schemas
   and attributes</a>.
 </p>
+
+<h2>Generated code</h2>
+<p>
+  The Dart types that <code>dart run avro:generate</code> gives each schema; the
+  <a href="../guide/codegen.html">Code generation</a> guide shows them at work.
+  <code>toAvro</code> turns a value of a generated class into the generic value of the tables
+  above, and <code>fromAvro</code> turns it back.
+</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Schema</th>                                  <th>Dart type</th>                                     <th>Generic value</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>record</code></td>                     <td>A generated <code>final class</code></td>          <td><code>Map&lt;String, Object?&gt;</code> with the Avro field names</td></tr>
+    <tr><td><code>enum</code></td>                       <td>A generated <code>enum</code></td>                 <td>Its <code>symbol</code>, a <code>String</code></td></tr>
+    <tr><td><code>array</code>, <code>map</code></td>    <td><code>List&lt;T&gt;</code>, <code>Map&lt;String, T&gt;</code></td><td>A list or map of the generic values</td></tr>
+    <tr><td><code>["null", T]</code></td>                <td><code>T?</code></td>                               <td>null, or the generic value of <code>T</code></td></tr>
+    <tr><td>any other union</td>                         <td><code>Object?</code></td>                          <td>The value itself, a <code>Branch</code> included</td></tr>
+    <tr><td><code>fixed</code></td>                      <td><code>Uint8List</code></td>                        <td>The same</td></tr>
+    <tr><td><code>null</code> as a field</td>            <td>No field</td>                                      <td><code>null</code></td></tr>
+    <tr><td>every other type</td>                        <td>Its Dart value, as above</td>                      <td>The same</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Class</th>                 <th>What it is</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>AvroType&lt;T&gt;</code></td> <td>A generated class's <code>avroType</code>: <code>schemaJson</code>, the <code>schema</code> parsed from it once, <code>toAvro</code> and <code>fromAvro</code></td></tr>
+    <tr><td><code>TypedCodec&lt;T&gt;</code></td><td><code>encode</code>, <code>decode</code>, <code>encodeSingleObject</code> and <code>decodeSingleObject</code> of <code>T</code>; <code>writer:</code> resolves older data, encoding always uses the type's schema; <code>avro</code> is the underlying <code>AvroCodec</code></td></tr>
+  </tbody>
+</table>
+</div>

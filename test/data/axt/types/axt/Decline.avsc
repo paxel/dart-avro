@@ -1,0 +1,60 @@
+{
+  "type": "record",
+  "name": "Decline",
+  "namespace": "axt",
+  "doc": "The body of a DECLINE message: the types of one offer that the receiver does not take, each with the reason. Defined in spec/protocol.md. Its schema changes only with a new envelope format.",
+  "fields": [
+    {
+      "name": "to",
+      "type": {
+        "type": "fixed",
+        "name": "DeclineTo",
+        "size": 32,
+        "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+      },
+      "doc": "The Ed25519 public key that signed the offer, the key of one device of its sender. A device ignores an answer that names another key."
+    },
+    {
+      "name": "offer_id",
+      "type": {
+        "type": "string",
+        "logicalType": "uuid"
+      },
+      "doc": "The id of the offer this message answers."
+    },
+    {
+      "name": "types",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "DeclineType",
+          "doc": "One offered type the receiver does not take.",
+          "fields": [
+            {
+              "name": "type",
+              "type": "string",
+              "doc": "The full name of the offered type."
+            },
+            {
+              "name": "reason",
+              "type": {
+                "type": "enum",
+                "name": "DeclineReason",
+                "doc": "Why the receiver does not take a type. NOT_WANTED: the receiver or its user chose not to take it. DOES_NOT_FIT: the type, in the offered version, does not fit the receiver's current manifest. DOES_NOT_RESOLVE: the offered schema does not resolve against the receiver's reader schema of the type. The default is for schema resolution only; within one envelope format every symbol is known.",
+                "symbols": [
+                  "NOT_WANTED",
+                  "DOES_NOT_FIT",
+                  "DOES_NOT_RESOLVE"
+                ],
+                "default": "NOT_WANTED"
+              },
+              "doc": "Why the receiver does not take the type."
+            }
+          ]
+        }
+      },
+      "doc": "The offered types the receiver does not take, 1 to 256, each a type of the offer and each at most once."
+    }
+  ]
+}

@@ -1,0 +1,187 @@
+{
+  "type": "record",
+  "name": "Car",
+  "namespace": "axt.example.v1",
+  "doc": "A car the user owns or drives.",
+  "axt.version": 1,
+  "axt.title": "model",
+  "axt.label": "Car",
+  "axt.label_translations": {
+    "de": "Auto"
+  },
+  "axt.help": "A car that is owned or driven.",
+  "axt.help_translations": {
+    "de": "Ein Auto, das man besitzt oder fährt."
+  },
+  "axt.emoji": "🚗",
+  "fields": [
+    {
+      "name": "make",
+      "type": "string",
+      "default": "",
+      "doc": "The manufacturer, such as Volkswagen. Empty when not known.",
+      "axt.label": "Make",
+      "axt.label_translations": {
+        "de": "Marke"
+      },
+      "axt.help": "The manufacturer, such as Volkswagen.",
+      "axt.help_translations": {
+        "de": "Der Hersteller, etwa Volkswagen."
+      },
+      "axt.emoji": "🏭"
+    },
+    {
+      "name": "model",
+      "type": "string",
+      "default": "",
+      "doc": "The model, such as Golf. Empty when not known.",
+      "axt.label": "Model",
+      "axt.label_translations": {
+        "de": "Modell"
+      },
+      "axt.help": "The model, such as Golf.",
+      "axt.help_translations": {
+        "de": "Das Modell, etwa Golf."
+      },
+      "axt.emoji": "🚙"
+    },
+    {
+      "name": "year",
+      "type": [
+        "null",
+        "int"
+      ],
+      "default": null,
+      "doc": "The model year, such as 2019, from 1886 to 9999: the year the manufacturer gives the model, which need not be a year in which the car was built or sold, and so a number rather than a date. Null when not known.",
+      "axt.label": "Model year",
+      "axt.label_translations": {
+        "de": "Modelljahr"
+      },
+      "axt.help": "The model year, such as 2019.",
+      "axt.help_translations": {
+        "de": "Das Modelljahr, etwa 2019."
+      },
+      "axt.emoji": "📅",
+      "axt.min": 1886,
+      "axt.max": 9999
+    },
+    {
+      "name": "plate",
+      "type": "string",
+      "default": "",
+      "doc": "The licence plate number as written on the plate. Empty when the car has none or it is not known.",
+      "axt.label": "Licence plate",
+      "axt.label_translations": {
+        "de": "Kennzeichen"
+      },
+      "axt.help": "The number as written on the licence plate.",
+      "axt.help_translations": {
+        "de": "Das Kennzeichen, wie es auf dem Schild steht."
+      },
+      "axt.emoji": "🪪",
+      "axt.preferred_length": 10
+    },
+    {
+      "name": "vin",
+      "type": "string",
+      "default": "",
+      "doc": "The vehicle identification number of ISO 3779: 17 characters, each a digit or an upper-case letter other than I, O and Q. Empty when not known.",
+      "axt.label": "VIN",
+      "axt.label_translations": {
+        "de": "FIN"
+      },
+      "axt.help": "The vehicle identification number: 17 letters and digits.",
+      "axt.help_translations": {
+        "de": "Die Fahrzeug-Identifizierungsnummer: 17 Buchstaben und Ziffern."
+      },
+      "axt.emoji": "🆔",
+      "axt.pattern": "[A-HJ-NPR-Z0-9]{17}",
+      "axt.preferred_length": 17,
+      "axt.example": "WVWZZZ1KZAW000000",
+      "axt.advanced": true
+    },
+    {
+      "name": "odometer",
+      "type": [
+        "null",
+        "long"
+      ],
+      "default": null,
+      "doc": "The distance on the odometer, in odometer_unit, 0 or more. Null when not known.",
+      "axt.label": "Odometer",
+      "axt.label_translations": {
+        "de": "Tachostand"
+      },
+      "axt.help": "The distance on the odometer, in its unit.",
+      "axt.help_translations": {
+        "de": "Die Strecke auf dem Tacho, in dessen Einheit."
+      },
+      "axt.emoji": "🔢",
+      "axt.min": 0
+    },
+    {
+      "name": "odometer_unit",
+      "type": {
+        "type": "enum",
+        "name": "CarDistanceUnit",
+        "doc": "A unit of distance. KILOMETRE: kilometres. MILE: international miles. UNKNOWN: a unit this version does not name; a symbol this version does not know is read as UNKNOWN.",
+        "symbols": [
+          "KILOMETRE",
+          "MILE",
+          "UNKNOWN"
+        ],
+        "default": "UNKNOWN",
+        "axt.symbols": {
+          "KILOMETRE": {
+            "label": "Kilometres",
+            "label_translations": {
+              "de": "Kilometer"
+            },
+            "emoji": "📏"
+          },
+          "MILE": {
+            "label": "Miles",
+            "label_translations": {
+              "de": "Meilen"
+            },
+            "emoji": "🛣️"
+          },
+          "UNKNOWN": {
+            "label": "Unknown",
+            "label_translations": {
+              "de": "Unbekannt"
+            },
+            "emoji": "❔"
+          }
+        }
+      },
+      "default": "KILOMETRE",
+      "doc": "The unit of odometer.",
+      "axt.label": "Odometer unit",
+      "axt.label_translations": {
+        "de": "Einheit des Tachos"
+      },
+      "axt.help": "Whether the odometer counts kilometres or miles.",
+      "axt.help_translations": {
+        "de": "Ob der Tacho Kilometer oder Meilen zählt."
+      },
+      "axt.emoji": "📐"
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "default": "",
+      "doc": "Free notes on the car, as plain text; lines are separated by LF. Empty when there are none.",
+      "axt.label": "Notes",
+      "axt.label_translations": {
+        "de": "Notizen"
+      },
+      "axt.help": "Anything else about the car.",
+      "axt.help_translations": {
+        "de": "Alles Weitere zum Auto."
+      },
+      "axt.emoji": "📝",
+      "axt.multiline": true
+    }
+  ]
+}

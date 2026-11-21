@@ -115,15 +115,24 @@ final class AvroFileReader {
   /// The records of the file, decoded lazily, one block at a time, with [codec], or with a
   /// codec of the file's own schema when [codec] is null.
   ///
+  /// [codec]'s writer schema must have the canonical form of the file's schema; iterating
+  /// throws [DecodeException] before the first record if it has not. To read the records as
+  /// another schema, pass a codec whose writer is the file's schema and whose reader is yours.
+  ///
   /// Iterating throws [DecodeException] for a malformed block, and [LimitExceededException]
   /// as soon as a block's decompressed size or the total exceeds [limits].
   Iterable<Object?> records([AvroCodec? codec]) sync* {
-    final c =
-        codec ??
-        AvroCodec(
-          writer: Schema.parse(header.schemaJson, limits: limits),
-          limits: limits,
-        );
+    final fileSchema = Schema.parse(header.schemaJson, limits: limits);
+    if (codec != null &&
+        codec.writer.canonicalForm != fileSchema.canonicalForm) {
+      throw DecodeException(
+        'the codec writes the schema ${_hex(codec.writer.crc64)}, '
+        'but the file was written with ${_hex(fileSchema.crc64)}; '
+        "make the file's schema the codec's writer and yours its reader",
+        offset: 0,
+      );
+    }
+    final c = codec ?? AvroCodec(writer: fileSchema, limits: limits);
     final input = BinaryReader(_bytes, _blocksStart);
     var total = 0;
     while (input.remaining > 0) {
@@ -149,16 +158,35 @@ final class AvroFileReader {
       total += block.length;
       final blockInput = BinaryReader(block);
       final min = minEncodedSize(c.writer);
-      if (min > 0
-          ? count > block.length ~/ min
-          : count > (limits.maxZeroSizeItems ?? count)) {
-        input.fail(
-          'the block declares $count records, more than it can hold',
-          start,
-        );
+      if (min > 0) {
+        if (count > block.length ~/ min) {
+          input.fail(
+            'the block declares $count records, more than it can hold',
+            start,
+          );
+        }
+      } else {
+        final max = limits.maxZeroSizeItems;
+        if (max != null && count > max) {
+          throw LimitExceededException(
+            'a block declares $count records of zero bytes, the limit is $max',
+            limit: 'maxZeroSizeItems',
+          );
+        }
       }
       for (var i = 0; i < count; i++) {
-        yield decodeFrom(c, blockInput);
+        final Object? record;
+        try {
+          record = decodeFrom(c, blockInput);
+        } on DecodeException catch (e) {
+          throw DecodeException(
+            e.message,
+            offset: e.offset,
+            path: e.path,
+            blockOffset: start,
+          );
+        }
+        yield record;
       }
       if (blockInput.remaining != 0) {
         input.fail(
@@ -214,6 +242,9 @@ final class AvroFileReader {
     return out.bytes.takeBytes();
   }
 }
+
+String _hex(int fingerprint) =>
+    '0x${BigInt.from(fingerprint).toUnsigned(64).toRadixString(16).padLeft(16, '0')}';
 
 final class _LimitedSink implements Sink<List<int>> {
   _LimitedSink(this.reader, this.total);

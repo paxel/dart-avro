@@ -21,7 +21,7 @@
   <tbody>
     <tr><td><code>SchemaParseException</code></td>            <td><code>String? path</code></td>                           <td><code>SchemaParseException at Memo.fields[1].type: …</code>, or without <code>at</code> when <code>path</code> is <code>null</code></td></tr>
     <tr><td><code>ResolutionException</code></td>             <td><code>String path</code></td>                            <td><code>ResolutionException at Memo.written: …</code></td></tr>
-    <tr><td><code>DecodeException</code></td>                 <td><code>int offset</code>, <code>String? path</code></td>  <td><code>DecodeException at byte 12 ($.at): …</code>, or without the path</td></tr>
+    <tr><td><code>DecodeException</code></td>                 <td><code>int offset</code>, <code>String? path</code>, <code>int? blockOffset</code></td>  <td><code>DecodeException at byte 12 ($.at): …</code>, or without the path</td></tr>
     <tr><td><code>EncodeException</code></td>                 <td><code>String path</code></td>                            <td><code>EncodeException at $.written.year: …</code></td></tr>
     <tr><td><code>LimitExceededException</code></td>          <td><code>String limit</code></td>                           <td><code>LimitExceededException: …</code></td></tr>
     <tr><td><code>UnsupportedCompressionException</code></td> <td><code>String compression</code></td>                     <td><code>UnsupportedCompressionException: …</code></td></tr>
@@ -52,20 +52,21 @@
   <li>Thrown by the <code>AvroFileReader</code> constructor: no magic, a malformed header, no <code>avro.schema</code>, or <code>avro.schema</code> or <code>avro.codec</code> that is not UTF-8.</li>
   <li>Thrown while iterating <code>AvroFileReader.records</code>: a malformed block, a sync marker that does not match, data that is not valid DEFLATE, a record count the block cannot hold, bytes left after the records.</li>
   <li><code>offset</code>: the byte where decoding failed, from the start of the bytes decoded; for the records of a container file, from the start of the decompressed block.</li>
+  <li><code>blockOffset</code>: for the records of a container file, the file offset at which the record's block starts; <code>toString</code> then reads <code>DecodeException at byte 1 of the block at byte 79: …</code>. Null outside container files.</li>
   <li><code>path</code>: the place in the value when a logical type cannot be read, such as a <code>timestamp-millis</code> beyond <code>DateTime</code> or a <code>uuid</code> string that is not a UUID; otherwise <code>null</code>.</li>
 </ul>
 
 <h2><code>EncodeException</code></h2>
 <p>A value does not fit the schema it is encoded with.</p>
 <ul>
-  <li>Thrown by <code>encode</code>, <code>encodeSingleObject</code> and <code>AvroFileWriter.add</code>: a value of the wrong Dart type, a missing record field or an unknown key, an <code>int</code> beyond 32 bits, a wrong <code>fixed</code> size, an unknown enum symbol, an unpaired surrogate, a union value that fits no branch or more than one, a logical value that would lose precision or does not fit, a value nested deeper than <code>maxValueDepth</code>.</li>
+  <li>Thrown by <code>encode</code>, <code>encodeSingleObject</code> and <code>AvroFileWriter.add</code>: a value of the wrong Dart type, a missing record field or an unknown key, an <code>int</code> beyond 32 bits, a wrong <code>fixed</code> size, an unknown enum symbol, an unpaired surrogate, a union value that fits no branch or more than one, a logical value that would lose precision or does not fit.</li>
   <li><code>path</code>: the place in the value: <code>$</code>, <code>$.written.year</code>, <code>$.items[2]</code>.</li>
 </ul>
 
 <h2><code>LimitExceededException</code></h2>
 <p>Input exceeds one of the <a href="limits.html">limits</a>.</p>
 <ul>
-  <li>Thrown by <code>Schema.parse</code> for <code>maxSchemaBytes</code> and <code>maxSchemaDepth</code>, by <code>decode</code> and <code>decodeSingleObject</code> for <code>maxValueDepth</code> and <code>maxZeroSizeItems</code>, and while iterating <code>AvroFileReader.records</code> for <code>maxBlockBytes</code> and <code>maxTotalBytes</code>.</li>
+  <li>Thrown by <code>Schema.parse</code> for <code>maxSchemaBytes</code> and <code>maxSchemaDepth</code>, by <code>decode</code>, <code>decodeSingleObject</code>, <code>encode</code> and <code>encodeSingleObject</code> for <code>maxValueDepth</code>, by <code>decode</code> and <code>decodeSingleObject</code> for <code>maxZeroSizeItems</code>, and while iterating <code>AvroFileReader.records</code> for <code>maxBlockBytes</code>, <code>maxTotalBytes</code> and <code>maxZeroSizeItems</code>. Every limit throws this exception, whatever the direction.</li>
   <li><code>limit</code>: the name of the <code>AvroLimits</code> field, such as <code>maxBlockBytes</code>.</li>
 </ul>
 

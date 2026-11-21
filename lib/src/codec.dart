@@ -172,9 +172,9 @@ final class _Encoder {
   void encode(Schema schema, Object? value, String path, int depth) {
     final maxDepth = limits.maxValueDepth;
     if (maxDepth != null && depth > maxDepth) {
-      throw EncodeException(
-        'the value is nested deeper than $maxDepth',
-        path: path,
+      throw LimitExceededException(
+        'the value at $path is nested deeper than $maxDepth',
+        limit: 'maxValueDepth',
       );
     }
     Never wrong(String expected) => throw EncodeException(

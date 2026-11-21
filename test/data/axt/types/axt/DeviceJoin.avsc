@@ -1,0 +1,28 @@
+{
+  "type": "record",
+  "name": "DeviceJoin",
+  "namespace": "axt",
+  "doc": "The body of a DEVICE_JOIN message: a new device asks a device of its owner, whose join code it scanned, to add its key to the devices of that device's sender. Defined in spec/keys.md, section 5.2. The message is signed with the new device's key, which is its sender. It travels only in the live connection the join code opened. Its schema changes only with a new envelope format.",
+  "fields": [
+    {
+      "name": "to",
+      "type": {
+        "type": "fixed",
+        "name": "DeviceJoinTo",
+        "size": 32,
+        "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+      },
+      "doc": "The Ed25519 public key of the device that showed the join code, which is asked to add the new device. A device ignores a DEVICE_JOIN that names another key."
+    },
+    {
+      "name": "proof",
+      "type": {
+        "type": "fixed",
+        "name": "DeviceJoinProof",
+        "size": 64,
+        "doc": "An Ed25519 signature. Defined in spec/keys.md."
+      },
+      "doc": "The signature of the new device's key over the key in to and the new device's key, as spec/keys.md, section 5.2, defines; the device that adds the new device puts it into its DEVICE_ADD."
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "type": "record",
+  "name": "Ack",
+  "namespace": "axt",
+  "doc": "The body of an ACK message: what the receiver did with the messages it acknowledges, which are messages of the device it sends the acknowledgement to. Defined in spec/protocol.md. Its schema changes only with a new envelope format.",
+  "fields": [
+    {
+      "name": "to",
+      "type": {
+        "type": "fixed",
+        "name": "AckTo",
+        "size": 32,
+        "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+      },
+      "doc": "The Ed25519 public key that signed the acknowledged messages, the key of one device of their sender. A device ignores an acknowledgement that names another key."
+    },
+    {
+      "name": "records",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "AckRecord",
+          "doc": "The outcome of one acknowledged message, as spec/records.md, section 7, defines it for a record message and the document that defines the acknowledged kind for any other.",
+          "fields": [
+            {
+              "name": "id",
+              "type": {
+                "type": "string",
+                "logicalType": "uuid"
+              },
+              "doc": "The id of the record, as the acknowledged message carried it in its record field."
+            },
+            {
+              "name": "version",
+              "type": "long",
+              "doc": "The version of the acknowledged message."
+            },
+            {
+              "name": "outcome",
+              "type": {
+                "type": "enum",
+                "name": "AckOutcome",
+                "doc": "What the receiver did with the message, as spec/records.md, section 7, defines. APPLIED: took the record or deleted it as the message says. MERGED: took it except fields its user had changed. KEPT: took nothing, because its user's change covers the whole record. DUPLICATE: already had this version, or as the document that defines the acknowledged kind says. STALE: already had a higher version, or as the document that defines the acknowledged kind says. WITHDRAWN: removed its copy of a record its sender no longer shares, for a WITHDRAW message. The default is for schema resolution only; within one envelope format every symbol is known.",
+                "symbols": [
+                  "APPLIED",
+                  "MERGED",
+                  "KEPT",
+                  "DUPLICATE",
+                  "STALE",
+                  "WITHDRAWN"
+                ],
+                "default": "DUPLICATE"
+              },
+              "doc": "What the receiver did with the message."
+            },
+            {
+              "name": "receiver_version",
+              "type": "long",
+              "doc": "The receiver's version of the record after the message, as the document that defines the acknowledged kind says."
+            },
+            {
+              "name": "kept_fields",
+              "type": {
+                "type": "array",
+                "items": "string"
+              },
+              "default": [],
+              "doc": "For MERGED, the names of the fields whose values the receiver kept and that differ from the values in the message, as the writer schema of the message names them, each at most once. Empty for every other outcome."
+            }
+          ]
+        }
+      },
+      "default": [],
+      "doc": "The outcomes of the acknowledged messages, 1 to 4096, each id and version at most once."
+    }
+  ]
+}

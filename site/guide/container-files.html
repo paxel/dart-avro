@@ -128,9 +128,10 @@ deflate
 
 <h2>Decode with your own codec</h2>
 <p>
-  <code>records(codec)</code> decodes with a codec you pass. The codec's writer schema must be the
-  schema the file was written with: the reader does not compare them, and a codec of another
-  schema reads garbage or throws. There are two safe ways to get one:
+  <code>records(codec)</code> decodes with a codec you pass. The codec's writer schema must have
+  the canonical form of the schema the file was written with: the reader compares them before the
+  first record and throws <code>DecodeException</code>, naming both fingerprints, if they differ.
+  There are two ways to get such a codec:
 </p>
 <ul>
   <li>Parse <code>header.schemaJson</code> as the writer schema, and pass your schema as the reader, so that the file's schema is <a href="resolution.html">resolved</a> against yours.</li>

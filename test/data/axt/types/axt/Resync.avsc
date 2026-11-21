@@ -1,0 +1,18 @@
+{
+  "type": "record",
+  "name": "Resync",
+  "namespace": "axt",
+  "doc": "The body of a RESYNC message: a device asks another device of its own sender to send it every record again. Defined in spec/sync.md. The envelope's record field names the request: its id is an id of the request, not of a record, and its version is 1. The device that gets it forgets what the asking device has acknowledged to it, sends each record whole, and then acknowledges the request. Its schema changes only with a new envelope format.",
+  "fields": [
+    {
+      "name": "to",
+      "type": {
+        "type": "fixed",
+        "name": "ResyncTo",
+        "size": 32,
+        "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+      },
+      "doc": "The Ed25519 public key of the device that is asked, another current device of the sender's own device set. A device ignores a RESYNC that names another key."
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "type": "record",
+  "name": "Forward",
+  "namespace": "axt",
+  "doc": "The body of a FORWARD message: one message of another app, passed on by a device to another device of its own sender. Defined in spec/sync.md. The envelope's record field names the forward: its id is an id of the forward, not of a record, and its version is 1. The device that gets it verifies the signature of the message inside, processes that message as if it had received it, sends nothing to the app that signed it, and acknowledges the forward. Its schema changes only with a new envelope format.",
+  "fields": [
+    {
+      "name": "to",
+      "type": {
+        "type": "fixed",
+        "name": "ForwardTo",
+        "size": 32,
+        "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+      },
+      "doc": "The Ed25519 public key of the device the message is for, another current device of the sender's own device set. A device ignores a FORWARD that names another key."
+    },
+    {
+      "name": "message",
+      "type": "bytes",
+      "doc": "One complete message of another app, as the forwarding device received it: the single-object marker, the fingerprint of the envelope schema and the envelope in binary encoding, with the signature of the app that sent it. A MANIFEST, a DATA, a DELETE, a DEVICE_ADD or a DEVICE_REMOVE, or a message of another kind whose document says that it is forwarded. Its bytes are passed on unchanged."
+    },
+    {
+      "name": "schema",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null,
+      "doc": "For a forwarded DATA, the writer schema of its body as its full JSON text, as the app that sent the DATA offered it or, for a DATA that the device read in a file, as the file's axt.schemas holds it; its fingerprint is the one the body of the DATA names. Null for every other forwarded message."
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "type": "record",
+  "name": "ProposalReply",
+  "namespace": "axt",
+  "doc": "The body of a PROPOSAL_REPLY message: the answer of a record's sender to one proposal, taken or refused by its user. Defined in spec/shares.md. The envelope's record field is that of the proposal. The reply is a status only: a proposal that is taken reaches the proposer as an ordinary update of the record. Its schema changes only with a new envelope format.",
+  "fields": [
+    {
+      "name": "to",
+      "type": {
+        "type": "fixed",
+        "name": "ProposalReplyTo",
+        "size": 32,
+        "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+      },
+      "doc": "The Ed25519 public key that signed the proposal, the key of the proposer's device that sent it. A device ignores a reply that names another key."
+    },
+    {
+      "name": "proposal_id",
+      "type": {
+        "type": "string",
+        "logicalType": "uuid"
+      },
+      "doc": "The id of the proposal this message answers, as the proposal carried it."
+    },
+    {
+      "name": "answer",
+      "type": {
+        "type": "enum",
+        "name": "ProposalReplyAnswer",
+        "doc": "What the sender's user did with the proposal. ACCEPTED: took every proposed value into the record, which reaches the proposer as an update. DECLINED: did not take the proposal as it stands. The default is for schema resolution only; within one envelope format every symbol is known.",
+        "symbols": [
+          "ACCEPTED",
+          "DECLINED"
+        ],
+        "default": "DECLINED"
+      },
+      "doc": "The answer to the proposal."
+    }
+  ]
+}

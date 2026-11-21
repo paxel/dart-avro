@@ -120,6 +120,27 @@ void main() {
       );
     });
 
+    test(
+      'an encode deeper than maxValueDepth throws LimitExceededException',
+      () {
+        final codec = codecOf(linkedList, const AvroLimits(maxValueDepth: 10));
+        Object? deep = {'value': 0, 'next': null};
+        for (var i = 0; i < 10; i++) {
+          deep = {'value': i, 'next': deep};
+        }
+        expect(
+          () => codec.encode(deep),
+          throwsA(
+            isA<LimitExceededException>().having(
+              (e) => e.limit,
+              'limit',
+              'maxValueDepth',
+            ),
+          ),
+        );
+      },
+    );
+
     test('names and namespaces follow the specification', () {
       final s = Schema.parse('''
 {"type": "record", "name": "Example", "fields": [

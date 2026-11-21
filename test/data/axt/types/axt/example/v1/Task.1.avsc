@@ -1,0 +1,264 @@
+{
+  "type": "record",
+  "name": "Task",
+  "namespace": "axt.example.v1",
+  "doc": "A task: something the user wants to do, possibly by a due date, possibly repeating.",
+  "axt.version": 1,
+  "axt.title": "title",
+  "axt.label": "Task",
+  "axt.label_translations": {
+    "de": "Aufgabe"
+  },
+  "axt.help": "Something to do, possibly by a due date, possibly repeating.",
+  "axt.help_translations": {
+    "de": "Etwas zu erledigen, vielleicht bis zu einem Fälligkeitsdatum, vielleicht wiederkehrend."
+  },
+  "axt.emoji": "✅",
+  "fields": [
+    {
+      "name": "title",
+      "type": "string",
+      "default": "",
+      "doc": "What is to be done, as plain text on one line.",
+      "axt.label": "Title",
+      "axt.label_translations": {
+        "de": "Titel"
+      },
+      "axt.help": "What is to be done, on one line.",
+      "axt.help_translations": {
+        "de": "Was zu tun ist, in einer Zeile."
+      },
+      "axt.emoji": "🏷️"
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "default": "",
+      "doc": "Free notes on the task, as plain text; lines are separated by LF. Empty when there are none.",
+      "axt.label": "Notes",
+      "axt.label_translations": {
+        "de": "Notizen"
+      },
+      "axt.help": "Anything else about the task.",
+      "axt.help_translations": {
+        "de": "Alles Weitere zur Aufgabe."
+      },
+      "axt.emoji": "📝",
+      "axt.multiline": true
+    },
+    {
+      "name": "due",
+      "type": [
+        "null",
+        {
+          "type": "record",
+          "name": "DateTime",
+          "namespace": "axt",
+          "doc": "A date and time on the wall clock, to the millisecond, either in a time zone of the IANA time zone database, with the offset from UTC and the instant as the writer's zone rules gave them, or floating, on the wall clock of wherever the user is, without zone, offset and instant. Defined in spec/time.md. Its schema never changes.",
+          "fields": [
+            {
+              "name": "year",
+              "type": "int",
+              "doc": "The year of the proleptic Gregorian calendar, 1 to 9999."
+            },
+            {
+              "name": "month",
+              "type": "int",
+              "doc": "The month, 1 (January) to 12 (December)."
+            },
+            {
+              "name": "day",
+              "type": "int",
+              "doc": "The day of the month, 1 to the number of days of that month in that year."
+            },
+            {
+              "name": "hour",
+              "type": "int",
+              "doc": "The hour on the wall clock, 0 to 23."
+            },
+            {
+              "name": "minute",
+              "type": "int",
+              "doc": "The minute, 0 to 59."
+            },
+            {
+              "name": "second",
+              "type": "int",
+              "doc": "The second, 0 to 59; a leap second is not written as 60."
+            },
+            {
+              "name": "millisecond",
+              "type": "int",
+              "doc": "The millisecond, 0 to 999."
+            },
+            {
+              "name": "zone",
+              "type": [
+                "null",
+                "string"
+              ],
+              "default": null,
+              "doc": "The name of the time zone in the IANA time zone database, such as Europe/Berlin. Null for a floating time; then offset_seconds and instant_ms are null as well."
+            },
+            {
+              "name": "offset_seconds",
+              "type": [
+                "null",
+                "int"
+              ],
+              "default": null,
+              "doc": "The offset of the wall clock from UTC, in seconds, -64800 to 64800, as the writer's rules of the zone gave it at the instant, such as 3600 for 01:00 east of UTC. Null for a floating time, and only then."
+            },
+            {
+              "name": "instant_ms",
+              "type": [
+                "null",
+                "long"
+              ],
+              "default": null,
+              "doc": "The instant, in milliseconds since 1970-01-01T00:00:00Z without leap seconds: the wall clock read as if it were UTC, minus offset_seconds. Null for a floating time, and only then."
+            }
+          ]
+        }
+      ],
+      "default": null,
+      "doc": "The date and time on the wall clock by which the task is due, in a time zone or floating; see due_all_day. Null when the task has no due date.",
+      "axt.label": "Due",
+      "axt.label_translations": {
+        "de": "Fällig"
+      },
+      "axt.help": "The day, and the time, by which the task is due.",
+      "axt.help_translations": {
+        "de": "Der Tag und die Uhrzeit, bis zu der die Aufgabe fällig ist."
+      },
+      "axt.emoji": "📅",
+      "axt.anchor": "local"
+    },
+    {
+      "name": "due_all_day",
+      "type": "boolean",
+      "default": false,
+      "doc": "True when the task is due on the day of due without a time of day; due is then floating at 00:00, and its time has no meaning.",
+      "axt.label": "Due all day",
+      "axt.label_translations": {
+        "de": "Ganztägig fällig"
+      },
+      "axt.help": "On when only the day counts, not the time.",
+      "axt.help_translations": {
+        "de": "An, wenn nur der Tag zählt, nicht die Uhrzeit."
+      },
+      "axt.emoji": "☀️"
+    },
+    {
+      "name": "repeat",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null,
+      "doc": "How the task repeats: the value of an RFC 5545 RRULE property without the RRULE: prefix, such as FREQ=WEEKLY;BYDAY=TU. The occurrences start at due, on the wall clock of its time zone, or of wherever the user is when due is floating. Null when the task does not repeat.",
+      "axt.label": "Repeats",
+      "axt.label_translations": {
+        "de": "Wiederholung"
+      },
+      "axt.help": "How the task repeats, as a rule of iCalendar.",
+      "axt.help_translations": {
+        "de": "Wie sich die Aufgabe wiederholt, als Regel von iCalendar."
+      },
+      "axt.emoji": "🔁",
+      "axt.placeholder": "FREQ=WEEKLY;BYDAY=TU",
+      "axt.example": "FREQ=MONTHLY;INTERVAL=3"
+    },
+    {
+      "name": "done",
+      "type": "boolean",
+      "default": false,
+      "doc": "True when the task is done. For a repeating task: the occurrence at due is done.",
+      "axt.label": "Done",
+      "axt.label_translations": {
+        "de": "Erledigt"
+      },
+      "axt.help": "On when the task is done; for a repeating task, the occurrence at the due date.",
+      "axt.help_translations": {
+        "de": "An, wenn die Aufgabe erledigt ist; bei einer wiederkehrenden Aufgabe das Vorkommen am Fälligkeitsdatum."
+      },
+      "axt.emoji": "✔️"
+    },
+    {
+      "name": "done_at",
+      "type": [
+        "null",
+        "axt.DateTime"
+      ],
+      "default": null,
+      "doc": "When the task was marked done. Null when it is not done or the time is not known.",
+      "axt.label": "Done at",
+      "axt.label_translations": {
+        "de": "Erledigt am"
+      },
+      "axt.help": "When the task was marked done.",
+      "axt.help_translations": {
+        "de": "Wann die Aufgabe als erledigt markiert wurde."
+      },
+      "axt.emoji": "🏁",
+      "axt.anchor": "instant",
+      "axt.advanced": true
+    },
+    {
+      "name": "priority",
+      "type": {
+        "type": "enum",
+        "name": "TaskPriority",
+        "doc": "How important a task is. NONE: no priority given. LOW, MEDIUM, HIGH: low, medium and high priority. A symbol this version does not know is read as NONE.",
+        "symbols": [
+          "NONE",
+          "LOW",
+          "MEDIUM",
+          "HIGH"
+        ],
+        "default": "NONE",
+        "axt.symbols": {
+          "NONE": {
+            "label": "None",
+            "label_translations": {
+              "de": "Keine"
+            },
+            "emoji": "⚪"
+          },
+          "LOW": {
+            "label": "Low",
+            "label_translations": {
+              "de": "Niedrig"
+            },
+            "emoji": "🟢"
+          },
+          "MEDIUM": {
+            "label": "Medium",
+            "label_translations": {
+              "de": "Mittel"
+            },
+            "emoji": "🟡"
+          },
+          "HIGH": {
+            "label": "High",
+            "label_translations": {
+              "de": "Hoch"
+            },
+            "emoji": "🔴"
+          }
+        }
+      },
+      "default": "NONE",
+      "doc": "How important the task is.",
+      "axt.label": "Priority",
+      "axt.label_translations": {
+        "de": "Priorität"
+      },
+      "axt.help": "How important the task is.",
+      "axt.help_translations": {
+        "de": "Wie wichtig die Aufgabe ist."
+      },
+      "axt.emoji": "❗"
+    }
+  ]
+}

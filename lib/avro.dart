@@ -16,6 +16,7 @@ export 'src/logical.dart'
         AvroDuration,
         AvroLocalTimestamp,
         AvroTimestampNanos;
+export 'src/typed.dart' show AvroType, TypedCodec;
 export 'src/schema.dart'
     show
         ArraySchema,

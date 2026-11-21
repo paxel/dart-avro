@@ -1,0 +1,218 @@
+{
+  "type": "record",
+  "name": "Note",
+  "namespace": "axt.example.v1",
+  "doc": "A note: a piece of text the user wrote down, with a title and tags.",
+  "axt.version": 1,
+  "axt.title": "title",
+  "axt.label": "Note",
+  "axt.label_translations": {
+    "de": "Notiz"
+  },
+  "axt.help": "A piece of text written down, with a title and tags.",
+  "axt.help_translations": {
+    "de": "Ein aufgeschriebener Text mit Titel und Schlagwörtern."
+  },
+  "axt.emoji": "🗒️",
+  "fields": [
+    {
+      "name": "title",
+      "type": "string",
+      "default": "",
+      "doc": "The note's title, as plain text on one line. Empty when the note has none.",
+      "axt.label": "Title",
+      "axt.label_translations": {
+        "de": "Titel"
+      },
+      "axt.help": "The note's title, on one line.",
+      "axt.help_translations": {
+        "de": "Der Titel der Notiz, in einer Zeile."
+      },
+      "axt.emoji": "🏷️"
+    },
+    {
+      "name": "text",
+      "type": "string",
+      "default": "",
+      "doc": "The note's content, written in the format named by the field format. Empty when the note has only a title.",
+      "axt.label": "Text",
+      "axt.label_translations": {
+        "de": "Text"
+      },
+      "axt.help": "The content, as plain text or Markdown, as Format says.",
+      "axt.help_translations": {
+        "de": "Der Inhalt, als einfacher Text oder Markdown, wie unter Format angegeben."
+      },
+      "axt.emoji": "📝",
+      "axt.multiline": true
+    },
+    {
+      "name": "format",
+      "type": {
+        "type": "enum",
+        "name": "NoteFormat",
+        "doc": "How the text of a note is written. PLAIN: plain text, lines separated by LF. MARKDOWN: CommonMark. A symbol this version does not know is read as PLAIN.",
+        "symbols": [
+          "PLAIN",
+          "MARKDOWN"
+        ],
+        "default": "PLAIN",
+        "axt.symbols": {
+          "PLAIN": {
+            "label": "Plain text",
+            "label_translations": {
+              "de": "Einfacher Text"
+            },
+            "emoji": "📄"
+          },
+          "MARKDOWN": {
+            "label": "Markdown",
+            "label_translations": {
+              "de": "Markdown"
+            },
+            "emoji": "Ⓜ️"
+          }
+        }
+      },
+      "default": "PLAIN",
+      "doc": "How the field text is written.",
+      "axt.label": "Format",
+      "axt.label_translations": {
+        "de": "Format"
+      },
+      "axt.help": "How the text is written.",
+      "axt.help_translations": {
+        "de": "Wie der Text geschrieben ist."
+      },
+      "axt.emoji": "🔤"
+    },
+    {
+      "name": "created",
+      "type": [
+        "null",
+        {
+          "type": "record",
+          "name": "DateTime",
+          "namespace": "axt",
+          "doc": "A date and time on the wall clock, to the millisecond, either in a time zone of the IANA time zone database, with the offset from UTC and the instant as the writer's zone rules gave them, or floating, on the wall clock of wherever the user is, without zone, offset and instant. Defined in spec/time.md. Its schema never changes.",
+          "fields": [
+            {
+              "name": "year",
+              "type": "int",
+              "doc": "The year of the proleptic Gregorian calendar, 1 to 9999."
+            },
+            {
+              "name": "month",
+              "type": "int",
+              "doc": "The month, 1 (January) to 12 (December)."
+            },
+            {
+              "name": "day",
+              "type": "int",
+              "doc": "The day of the month, 1 to the number of days of that month in that year."
+            },
+            {
+              "name": "hour",
+              "type": "int",
+              "doc": "The hour on the wall clock, 0 to 23."
+            },
+            {
+              "name": "minute",
+              "type": "int",
+              "doc": "The minute, 0 to 59."
+            },
+            {
+              "name": "second",
+              "type": "int",
+              "doc": "The second, 0 to 59; a leap second is not written as 60."
+            },
+            {
+              "name": "millisecond",
+              "type": "int",
+              "doc": "The millisecond, 0 to 999."
+            },
+            {
+              "name": "zone",
+              "type": [
+                "null",
+                "string"
+              ],
+              "default": null,
+              "doc": "The name of the time zone in the IANA time zone database, such as Europe/Berlin. Null for a floating time; then offset_seconds and instant_ms are null as well."
+            },
+            {
+              "name": "offset_seconds",
+              "type": [
+                "null",
+                "int"
+              ],
+              "default": null,
+              "doc": "The offset of the wall clock from UTC, in seconds, -64800 to 64800, as the writer's rules of the zone gave it at the instant, such as 3600 for 01:00 east of UTC. Null for a floating time, and only then."
+            },
+            {
+              "name": "instant_ms",
+              "type": [
+                "null",
+                "long"
+              ],
+              "default": null,
+              "doc": "The instant, in milliseconds since 1970-01-01T00:00:00Z without leap seconds: the wall clock read as if it were UTC, minus offset_seconds. Null for a floating time, and only then."
+            }
+          ]
+        }
+      ],
+      "default": null,
+      "doc": "When the note was written. Null when not known.",
+      "axt.label": "Created",
+      "axt.label_translations": {
+        "de": "Erstellt"
+      },
+      "axt.help": "When the note was written.",
+      "axt.help_translations": {
+        "de": "Wann die Notiz geschrieben wurde."
+      },
+      "axt.emoji": "🆕",
+      "axt.anchor": "instant",
+      "axt.advanced": true
+    },
+    {
+      "name": "updated",
+      "type": [
+        "null",
+        "axt.DateTime"
+      ],
+      "default": null,
+      "doc": "When the note's content last changed. Null when not known.",
+      "axt.label": "Updated",
+      "axt.label_translations": {
+        "de": "Geändert"
+      },
+      "axt.help": "When the note's content last changed.",
+      "axt.help_translations": {
+        "de": "Wann der Inhalt der Notiz zuletzt geändert wurde."
+      },
+      "axt.emoji": "🔄",
+      "axt.anchor": "instant",
+      "axt.advanced": true
+    },
+    {
+      "name": "tags",
+      "type": {
+        "type": "array",
+        "items": "string"
+      },
+      "default": [],
+      "doc": "Tags the user gave the note, in the user's order and without duplicates; each a word or short phrase without a leading #. Empty when there are none.",
+      "axt.label": "Tags",
+      "axt.label_translations": {
+        "de": "Schlagwörter"
+      },
+      "axt.help": "Words or short phrases to find the note by, without a leading #.",
+      "axt.help_translations": {
+        "de": "Wörter oder kurze Ausdrücke, über die sich die Notiz finden lässt, ohne führendes #."
+      },
+      "axt.emoji": "🔖",
+      "axt.preferred_length": 20
+    }
+  ]
+}

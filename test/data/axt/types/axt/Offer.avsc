@@ -1,0 +1,51 @@
+{
+  "type": "record",
+  "name": "Offer",
+  "namespace": "axt",
+  "doc": "The body of an OFFER message: the types, each with its writer schema, whose records the sender wants to send to one receiver. Defined in spec/protocol.md. Its schema changes only with a new envelope format.",
+  "fields": [
+    {
+      "name": "to",
+      "type": {
+        "type": "fixed",
+        "name": "OfferTo",
+        "size": 32,
+        "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+      },
+      "doc": "The Ed25519 public key of the device the offer is made to, a current key of the receiver. A device ignores an offer that names another key."
+    },
+    {
+      "name": "offer_id",
+      "type": {
+        "type": "string",
+        "logicalType": "uuid"
+      },
+      "doc": "The id of the offer, a version 4 or 7 UUID in its 36-character lower-case text form, which the sender never uses for another offer. The answers to the offer name it."
+    },
+    {
+      "name": "types",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "OfferType",
+          "doc": "One type the sender offers, with the writer schema of its records.",
+          "fields": [
+            {
+              "name": "schema",
+              "type": "string",
+              "doc": "The writer schema of the type as its full JSON text, doc attributes and axt.version included, with which the sender writes the records it sends under this offer. The type's full name and version are those of this schema."
+            },
+            {
+              "name": "count",
+              "type": "long",
+              "default": 0,
+              "doc": "The number of record messages of the type, DATA and DELETE together, that the sender is about to send under this offer; for display only. 0 when the sender does not say."
+            }
+          ]
+        }
+      },
+      "doc": "The types offered, 1 to 256, each full name and each fingerprint at most once."
+    }
+  ]
+}

@@ -9,8 +9,9 @@
 <p>
   The package reads an Avro schema from its JSON text and gives you a codec for it. The codec
   turns Dart values into Avro's binary encoding and back. Records and maps are
-  <code>Map&lt;String, Object?&gt;</code>, arrays are <code>List&lt;Object?&gt;</code>; there is no
-  code generation. A second schema lets the codec read old data as a newer shape, by Avro's schema
+  <code>Map&lt;String, Object?&gt;</code>, arrays are <code>List&lt;Object?&gt;</code>; or, with
+  <code>dart run avro:generate</code>, immutable Dart classes generated from your schemas. A second
+  schema lets the codec read old data as a newer shape, by Avro's schema
   resolution. Container files, the <code>.avro</code> files other Avro libraries write, are read
   and written in memory.
 </p>
@@ -28,7 +29,7 @@
   </p>
 </div>
 
-<h2>What 0.1.0 covers</h2>
+<h2>What 0.2.0 covers</h2>
 <ul>
   <li>Every primitive, complex and logical type of Avro 1.12.</li>
   <li>Binary encoding and single-object encoding.</li>
@@ -36,20 +37,20 @@
   <li>Parsing Canonical Form, with the fingerprints CRC-64-AVRO, MD5 and SHA-256.</li>
   <li>Object container files, read and write, compressed with <code>null</code> or <code>deflate</code>.</li>
   <li>Limits on untrusted input, on by default.</li>
+  <li>Code generation of immutable Dart classes and enums from <code>.avsc</code> files, with <code>TypedCodec</code>.</li>
 </ul>
 
-<h2>What 0.1.0 does not cover</h2>
+<h2>What 0.2.0 does not cover</h2>
 <ul>
   <li>JSON encoding.</li>
   <li>The compressions <code>snappy</code>, <code>bzip2</code>, <code>xz</code> and <code>zstandard</code>. A file that uses one of them is rejected.</li>
   <li>The Avro IPC/RPC protocol.</li>
-  <li>Code generation of typed Dart classes.</li>
 </ul>
 
 <h2>Install</h2>
 <p>Add the package to the <code>dependencies</code> of your <code>pubspec.yaml</code>:</p>
 <pre data-fragment><code class="language-yaml">dependencies:
-  avro: ^0.1.0</code></pre>
+  avro: ^0.2.0</code></pre>
 <p>
   Then follow <a href="start/getting-started.html">Getting started</a>: a schema, a record, and a
   container file in five minutes.
@@ -69,14 +70,14 @@
     <a class="card" href="guide/index.html">
       <p class="eyebrow">Track</p>
       <p class="card-title">Guide</p>
-      <p>One task per page: schemas, unions, resolution, container files, limits, errors.</p>
+      <p>One task per page: schemas, unions, resolution, container files, limits, errors, code generation.</p>
     </a>
   </li>
   <li>
     <a class="card" href="reference/index.html">
       <p class="eyebrow">Track</p>
       <p class="card-title">Reference</p>
-      <p>The value mapping, the limits, the exceptions and the conformance with the specification.</p>
+      <p>The value mapping, generated code, the limits, the exceptions and the conformance with the specification.</p>
     </a>
   </li>
 </ul>

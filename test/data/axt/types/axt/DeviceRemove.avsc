@@ -1,0 +1,18 @@
+{
+  "type": "record",
+  "name": "DeviceRemove",
+  "namespace": "axt",
+  "doc": "The body of a DEVICE_REMOVE message: a device removes the key of another device from the devices of its sender. Defined in spec/keys.md, section 5.3. The message is signed with the key of a device of the sender, which is its sender and is never the removed device itself. Its schema changes only with a new envelope format.",
+  "fields": [
+    {
+      "name": "device",
+      "type": {
+        "type": "fixed",
+        "name": "DeviceRemoveDevice",
+        "size": 32,
+        "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+      },
+      "doc": "The Ed25519 public key of the removed device, another key than the message's sender. Receivers reject every later message signed with it, and it is never added to the sender again."
+    }
+  ]
+}

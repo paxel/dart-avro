@@ -128,12 +128,16 @@ void main() {
     does not.
   </li>
   <li>
-    <strong>Reader union, writer not a union.</strong> The writer schema is read as the first
-    reader branch it matches, by the table above. If no branch matches, the constructor throws.
-    Because the first match wins, an <code>int</code> read as <code>["null", "double",
-    "long"]</code> becomes a <code>double</code>.
+    <strong>Reader union, writer not a union.</strong> The writer schema is read as the reader
+    branch that Apache Avro's Java implementation picks: first a branch of the same type, or of
+    the same full name for a named type; then the first record that resolves, preferring the same
+    short name; then the first promotion of the table above; then any other match, such as a
+    name found by alias. If no branch matches, the constructor throws. So an <code>int</code>
+    read as <code>["null", "double", "int"]</code> stays an <code>int</code>, but read as
+    <code>["null", "double", "long"]</code> it becomes a <code>double</code>, the first
+    promotion in the union's order.
   </li>
-  <li><strong>Both unions.</strong> Each writer branch is read as the first reader branch it matches.</li>
+  <li><strong>Both unions.</strong> Each writer branch is read as the reader branch picked the same way.</li>
 </ul>
 <pre data-example="guide/resolution-unions"><code class="language-dart">import 'package:avro/avro.dart';
 
@@ -150,15 +154,21 @@ void main() {
     print(e.message);
   }
 
-  // A plain int read as a union: the first branch it matches.
+  // A plain int read as a union: the branch of the same type first, then a promotion.
   final widen = AvroCodec(
+    writer: Schema.parse('"int"'),
+    reader: Schema.parse('["null", "double", "int"]'),
+  );
+  print(widen.decode(AvroCodec(writer: Schema.parse('"int"')).encode(5)));
+  final promote = AvroCodec(
     writer: Schema.parse('"int"'),
     reader: Schema.parse('["null", "double", "long"]'),
   );
-  print(widen.decode(AvroCodec(writer: Schema.parse('"int"')).encode(5)));
+  print(promote.decode(AvroCodec(writer: Schema.parse('"int"')).encode(5)));
 }</code></pre>
 <pre data-example-output="guide/resolution-unions"><code>5
 the writer wrote a branch that does not resolve: ResolutionException at long&lt;string&gt;: string does not resolve to long
+5
 5.0</code></pre>
 
 <h2>What throws, and when</h2>

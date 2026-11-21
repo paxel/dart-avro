@@ -135,11 +135,8 @@ final class _Resolver {
       return _WriterUnion(branches);
     }
     if (r is UnionSchema) {
-      for (final b in r.branches) {
-        if (b is! UnionSchema && matches(w, b)) {
-          return _ReaderBranch(plan(w, b, path));
-        }
-      }
+      final i = readerBranch(w, r, path);
+      if (i >= 0) return _ReaderBranch(plan(w, r.branches[i], path));
       fail(
         'no branch of the reader union ${r.branches.map(branchName).join(', ')} '
         'matches ${branchName(w)}',
@@ -171,6 +168,47 @@ final class _Resolver {
     }
   }
 
+  /// The reader branch that takes [w], in the order of Apache Avro's Java implementation
+  /// (`Resolver.firstMatchingBranch`): the same type, or the same full name for a named type;
+  /// then the first record that resolves, preferring the same short name; then a promotion;
+  /// then any other match, such as a name found by alias. -1 if none matches.
+  int readerBranch(Schema w, UnionSchema r, String path) {
+    final branches = r.branches;
+    var structure = -1;
+    for (var i = 0; i < branches.length; i++) {
+      final b = branches[i];
+      if (b.type != w.type) continue;
+      if (w is NamedSchema && b is NamedSchema) {
+        if (w.fullName == b.fullName) return i;
+        if (w is RecordSchema && b is RecordSchema && _resolves(w, b, path)) {
+          if (structure < 0 || w.name == b.name) structure = i;
+        }
+      } else if (w is! NamedSchema) {
+        return i;
+      }
+    }
+    if (structure >= 0) return structure;
+    final promoted = _promotions[w.type];
+    if (promoted != null) {
+      for (var i = 0; i < branches.length; i++) {
+        if (promoted.contains(branches[i].type)) return i;
+      }
+    }
+    for (var i = 0; i < branches.length; i++) {
+      if (matches(w, branches[i])) return i;
+    }
+    return -1;
+  }
+
+  bool _resolves(Schema w, Schema r, String path) {
+    try {
+      plan(w, r, path);
+      return true;
+    } on ResolutionException {
+      return false;
+    }
+  }
+
   Object _orReason(Plan Function() f) {
     try {
       return f();
@@ -192,6 +230,21 @@ final class _Resolver {
     if (known != null) return known;
     final node = _Record(r);
     records[(w, r)] = node;
+    try {
+      return _fillRecord(node, w, r, path);
+    } on ResolutionException {
+      // A failed attempt, such as trying a union branch, must not leave a half-built node.
+      records.remove((w, r));
+      rethrow;
+    }
+  }
+
+  _Record _fillRecord(
+    _Record node,
+    RecordSchema w,
+    RecordSchema r,
+    String path,
+  ) {
     final used = <String>{};
     final steps = <(String?, Plan?, Schema)>[];
     for (final wf in w.fields) {

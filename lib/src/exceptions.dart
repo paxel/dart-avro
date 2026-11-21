@@ -36,17 +36,29 @@ final class ResolutionException extends AvroException {
 
 /// The bytes are not a valid encoding of the schema.
 final class DecodeException extends AvroException {
-  const DecodeException(super.message, {required this.offset, this.path});
+  const DecodeException(
+    super.message, {
+    required this.offset,
+    this.path,
+    this.blockOffset,
+  });
 
-  /// The byte offset at which decoding failed.
+  /// The byte offset at which decoding failed. For a record of a container file, it counts
+  /// from the start of the record's block after decompression.
   final int offset;
 
   /// The path to the value being decoded, if known.
   final String? path;
 
+  /// For a record of a container file, the file offset at which its block starts; null
+  /// otherwise.
+  final int? blockOffset;
+
   @override
   String toString() =>
-      'DecodeException at byte $offset${path == null ? '' : ' ($path)'}: $message';
+      'DecodeException at byte $offset'
+      '${blockOffset == null ? '' : ' of the block at byte $blockOffset'}'
+      '${path == null ? '' : ' ($path)'}: $message';
 }
 
 /// A value does not fit the schema it is encoded with.

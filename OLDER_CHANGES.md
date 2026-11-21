@@ -2,6 +2,12 @@
 
 Released versions before the current one, newest first.
 
+## [0.1.1] - 2026-11-21
+
+### Changed
+
+- No change to the package; this version is the first one published to pub.dev by the release workflow.
+
 ## [0.1.0] - 2026-11-21
 
 ### Added

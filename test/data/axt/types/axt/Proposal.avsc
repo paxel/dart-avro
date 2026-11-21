@@ -1,0 +1,60 @@
+{
+  "type": "record",
+  "name": "Proposal",
+  "namespace": "axt",
+  "doc": "The body of a PROPOSAL message: a receiver of a record proposes changed values of some of its fields to the record's sender, whose user takes or refuses them. Defined in spec/shares.md. The envelope's record field names the sender's record and the version of it that the proposer holds; no version rule applies to the message. The proposal changes nothing by itself: a value the sender's user takes reaches every receiver as an ordinary update. Its schema changes only with a new envelope format.",
+  "fields": [
+    {
+      "name": "to",
+      "type": {
+        "type": "fixed",
+        "name": "ProposalTo",
+        "size": 32,
+        "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+      },
+      "doc": "The Ed25519 public key of the device of the record's sender that the proposal is sent to, a current key of that sender. A device that gets it directly ignores a PROPOSAL that names another key; a forwarded one is rejected unless this is a current or a removed key of the device's own set."
+    },
+    {
+      "name": "proposal_id",
+      "type": {
+        "type": "string",
+        "logicalType": "uuid"
+      },
+      "doc": "The id of the proposal, a version 4 or 7 UUID in its 36-character lower-case text form, which the proposer never uses for another proposal and which is not the id of a record, an offer, a request or a forward. The reply to the proposal names it."
+    },
+    {
+      "name": "fields",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "ProposalField",
+          "doc": "The proposed value of one top-level field of the record. Defined in spec/shares.md, section 13.1.",
+          "fields": [
+            {
+              "name": "name",
+              "type": "string",
+              "doc": "The name of the field, as the writer schema named in schema has it."
+            },
+            {
+              "name": "schema",
+              "type": {
+                "type": "fixed",
+                "name": "ProposalFieldSchema",
+                "size": 8,
+                "doc": "The CRC-64-AVRO fingerprint of a schema, as 8 bytes in little-endian order. Defined in spec/envelope.md, section 5."
+              },
+              "doc": "The fingerprint of the writer schema of the record's type with which the proposer wrote the value: the writer schema of the record's kept DATA, with which the proposer's change of the field was written. The owner keeps the writer schemas of the DATA it sent to the receiver."
+            },
+            {
+              "name": "value",
+              "type": "bytes",
+              "doc": "The proposed value of the field, in Avro binary encoding under the type the field has in the schema named in schema."
+            }
+          ]
+        }
+      },
+      "doc": "The proposed values, 1 to 4096, each field name at most once, in any order. Only fields that the proposal changes; a proposal neither creates nor deletes a record."
+    }
+  ]
+}

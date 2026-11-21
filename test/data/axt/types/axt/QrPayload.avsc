@@ -1,0 +1,96 @@
+{
+  "type": "record",
+  "name": "QrPayload",
+  "namespace": "axt",
+  "doc": "What a QR code shown by an app carries: its signing key, how to reach it on the local network and through a relay, and whether the code is for adding a device to the sender of the device that shows it. Defined in spec/transports.md. It is not a message and is not signed; scanning it in person confirms the key. Its schema changes only with a new payload version.",
+  "fields": [
+    {
+      "name": "signing_key",
+      "type": {
+        "type": "fixed",
+        "name": "QrPayloadSigningKey",
+        "size": 32,
+        "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+      },
+      "doc": "The Ed25519 public key of the installation that shows the code, the sender of every message it sends."
+    },
+    {
+      "name": "encryption_key",
+      "type": [
+        "null",
+        {
+          "type": "fixed",
+          "name": "QrPayloadEncryptionKey",
+          "size": 32,
+          "doc": "An X25519 public key in the encoding of RFC 7748. Defined in spec/keys.md."
+        }
+      ],
+      "default": null,
+      "doc": "The X25519 public key with which other apps encrypt messages to the installation through a relay. Null when the code names no relay; it is present exactly when relay is."
+    },
+    {
+      "name": "local",
+      "type": [
+        "null",
+        {
+          "type": "record",
+          "name": "QrPayloadLocal",
+          "doc": "Where the installation listens on the local network while it shows the code.",
+          "fields": [
+            {
+              "name": "addresses",
+              "type": {
+                "type": "array",
+                "items": "bytes"
+              },
+              "doc": "One to four IP addresses of the installation, each 4 bytes for IPv4 or 16 bytes for IPv6, in network byte order, in the order in which a scanner tries them."
+            },
+            {
+              "name": "port",
+              "type": "int",
+              "doc": "The TCP port on which the installation listens, 1 to 65535."
+            }
+          ]
+        }
+      ],
+      "default": null,
+      "doc": "Where to connect on the local network. Null when the installation does not listen."
+    },
+    {
+      "name": "relay",
+      "type": [
+        "null",
+        {
+          "type": "record",
+          "name": "QrPayloadRelay",
+          "doc": "The relay and the mailbox at it into which other apps put messages for the installation, as in the field relay of axt.Manifest.",
+          "fields": [
+            {
+              "name": "url",
+              "type": "string",
+              "doc": "The base URL of the relay: an absolute https URL with a host, ending with a slash, without user information, query or fragment, at most 256 bytes."
+            },
+            {
+              "name": "mailbox",
+              "type": {
+                "type": "fixed",
+                "name": "QrPayloadRelayMailbox",
+                "size": 32,
+                "doc": "A mailbox id. Defined in spec/transports.md."
+              },
+              "doc": "The id of the mailbox at the relay into which other apps put messages for the installation."
+            }
+          ]
+        }
+      ],
+      "default": null,
+      "doc": "Where to put messages for the installation through a relay. Null when the code names no relay; it is present exactly when encryption_key is."
+    },
+    {
+      "name": "join",
+      "type": "boolean",
+      "default": false,
+      "doc": "True when the code is shown to a new device of the same owner, which scans it to join the devices of the sender, as spec/keys.md, section 5.2, defines; local is then present. False for a code shown to another app."
+    }
+  ]
+}

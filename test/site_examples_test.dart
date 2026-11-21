@@ -5,10 +5,17 @@
 // complete program with `main()`. It may be followed by `<pre data-example-output="NAME">`
 // with its exact output. Every other `<pre>` must say `data-fragment`, so nothing slips through
 // untested.
+//
+// An example can use generated classes (the code generation guide): a
+// `<pre data-example-schema="SET"><code class="language-json">` block is the text of one `.avsc`
+// file of the schema set SET, and an example with `data-generate="SET"` runs in a directory of
+// its own, next to `types.g.dart`, which `dart run avro:generate` writes from the set's files,
+// in page order, before the example runs. The example imports it as `import 'types.g.dart';`.
 
 import 'dart:async';
 import 'dart:io';
 
+import 'package:avro/src/generate/command.dart';
 import 'package:test/test.dart';
 
 final class _Block {
@@ -90,17 +97,19 @@ void main() {
   final blocks = _blocks();
   final examples = <String, _Block>{};
   final outputs = <String, _Block>{};
+  final schemas = <String, List<_Block>>{};
 
   test('every code block is an example, an output or a fragment', () {
     final problems = <String>[];
     for (final b in blocks) {
       final example = b.attribute('data-example');
       final output = b.attribute('data-example-output');
-      final marks = [example, output, if (b.has('data-fragment')) ''];
+      final schema = b.attribute('data-example-schema');
+      final marks = [example, output, schema, if (b.has('data-fragment')) ''];
       if (marks.whereType<String>().length != 1) {
         problems.add(
-          '${b.page}: a <pre> needs exactly one of data-example, data-example-output '
-          'and data-fragment: ${b.code.split('\n').first}',
+          '${b.page}: a <pre> needs exactly one of data-example, data-example-output, '
+          'data-example-schema and data-fragment: ${b.code.split('\n').first}',
         );
       }
       if (example != null &&
@@ -131,6 +140,8 @@ void main() {
       }
       examples[example] = b;
     }
+    final schema = b.attribute('data-example-schema');
+    if (schema != null) (schemas[schema] ??= []).add(b);
     if (output != null) {
       if (outputs.containsKey(output)) {
         test('the output $output is named once', () => fail(b.page));
@@ -143,6 +154,14 @@ void main() {
     expect(outputs.keys.where((name) => !examples.containsKey(name)), isEmpty);
   });
 
+  test('every schema set is generated for an example, and only those', () {
+    final used = {
+      for (final b in examples.values) ?b.attribute('data-generate'),
+    };
+    expect(schemas.keys.where((set) => !used.contains(set)), isEmpty);
+    expect(used.where((set) => !schemas.containsKey(set)), isEmpty);
+  });
+
   final dir = Directory('.dart_tool/site_examples');
   late Map<String, Future<ProcessResult>> runs;
 
@@ -151,10 +170,30 @@ void main() {
     dir.createSync(recursive: true);
     runs = _pool({
       for (final MapEntry(key: name, value: b) in examples.entries)
-        name: () {
-          final file = File(
-            '${dir.path}/${name.replaceAll(RegExp('[^A-Za-z0-9_]'), '_')}.dart',
-          )..writeAsStringSync(b.code);
+        name: () async {
+          final safe = name.replaceAll(RegExp('[^A-Za-z0-9_]'), '_');
+          final set = b.attribute('data-generate');
+          final types = set == null ? null : schemas[set];
+          if (types == null) {
+            final file = File('${dir.path}/$safe.dart')
+              ..writeAsStringSync(b.code);
+            return Process.run(_dart, ['run', file.path]);
+          }
+          final own = Directory('${dir.path}/$safe')..createSync();
+          final paths = [
+            for (var i = 0; i < types.length; i++)
+              (File(
+                '${own.path}/schema_$i.avsc',
+              )..writeAsStringSync(types[i].code)).path,
+          ];
+          final err = StringBuffer();
+          final code = await runGenerate(
+            [...paths, '-o', '${own.path}/types.g.dart'],
+            out: StringBuffer(),
+            err: err,
+          );
+          if (code != 0) return ProcessResult(0, code, '', 'generate: $err');
+          final file = File('${own.path}/main.dart')..writeAsStringSync(b.code);
           return Process.run(_dart, ['run', file.path]);
         },
     }, 2);

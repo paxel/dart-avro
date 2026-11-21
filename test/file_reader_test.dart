@@ -120,7 +120,33 @@ void main() {
     expect(it.moveNext() && it.current == 1, isTrue);
     expect(it.moveNext() && it.current == 2, isTrue);
     expect(it.moveNext() && it.current == 3, isTrue);
-    expect(it.moveNext, throwsA(isA<DecodeException>()));
+    expect(
+      it.moveNext,
+      throwsA(
+        isA<DecodeException>()
+            .having(
+              (e) => e.blockOffset,
+              'blockOffset',
+              bytes.length - 16 - 1 - 2,
+            )
+            .having((e) => e.offset, 'offset', 1)
+            .having(
+              (e) => e.toString(),
+              'toString',
+              contains('of the block at byte'),
+            ),
+      ),
+    );
+  });
+
+  test('a decode error outside a container file has no block offset', () {
+    try {
+      AvroCodec(writer: Schema.parse('"int"'))
+          .decode(Uint8List.fromList([0x80]));
+      fail('no exception');
+    } on DecodeException catch (e) {
+      expect(e.blockOffset, isNull);
+    }
   });
 
   test('an absent avro.codec means null; another compression is rejected', () {
@@ -139,6 +165,59 @@ void main() {
           'snappy',
         ),
       ),
+    );
+  });
+
+  group("the codec's writer schema", () {
+    final bytes = file(
+      schema: '{"type": "record", "name": "R", "fields": [{"name": "a", "type": "int"}]}',
+      blocks: [
+        (1, [2]),
+      ],
+    );
+
+    test('another schema is rejected before the first record', () {
+      final other = AvroCodec(writer: Schema.parse('"int"'));
+      expect(
+        () => AvroFileReader(bytes).records(other).toList(),
+        throwsA(
+          isA<DecodeException>().having(
+            (e) => e.message,
+            'message',
+            contains('0x'),
+          ),
+        ),
+      );
+    });
+
+    test('the same canonical form in another text is accepted', () {
+      final same = AvroCodec(
+        writer: Schema.parse(
+          '{"name": "R", "doc": "d", "type": "record", "fields": [{"type": "int", "name": "a"}]}',
+        ),
+      );
+      expect(AvroFileReader(bytes).records(same).toList(), [
+        {'a': 1},
+      ]);
+    });
+
+    test(
+      "a resolving codec with the file's writer reads the reader's shape",
+      () {
+        final writer = Schema.parse(AvroFileReader(bytes).header.schemaJson);
+        final reader = Schema.parse(
+          '{"type": "record", "name": "R", "fields": [{"name": "a", "type": "long"}, '
+          '{"name": "b", "type": "string", "default": "x"}]}',
+        );
+        expect(
+          AvroFileReader(bytes)
+              .records(AvroCodec(writer: writer, reader: reader))
+              .toList(),
+          [
+            {'a': 1, 'b': 'x'},
+          ],
+        );
+      },
     );
   });
 
@@ -255,6 +334,23 @@ void main() {
             (e) => e.limit,
             'limit',
             'maxTotalBytes',
+          ),
+        ),
+      );
+    });
+
+    test('a block of zero-size records over maxZeroSizeItems throws LimitExceededException', () {
+      final bytes = file(schema: '"null"', blocks: [(10, <int>[])]);
+      expect(
+        () => AvroFileReader(
+          bytes,
+          limits: const AvroLimits(maxZeroSizeItems: 5),
+        ).records().toList(),
+        throwsA(
+          isA<LimitExceededException>().having(
+            (e) => e.limit,
+            'limit',
+            'maxZeroSizeItems',
           ),
         ),
       );

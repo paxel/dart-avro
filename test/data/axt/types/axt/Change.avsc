@@ -1,0 +1,177 @@
+{
+  "type": "record",
+  "name": "Change",
+  "namespace": "axt",
+  "doc": "The body of a CHANGE message: field states and the removal of one record, sent by a device to another device of its own sender, or, with a key in origin, the field states, the removal and the keep of the owner's layer of a record received from another app. Defined in spec/sync.md. The record's id is in the envelope's record field, whose version is the highest stamp in this body. Its schema changes only with a new envelope format.",
+  "fields": [
+    {
+      "name": "to",
+      "type": {
+        "type": "fixed",
+        "name": "ChangeTo",
+        "size": 32,
+        "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+      },
+      "doc": "The Ed25519 public key of the device the message is for, another current device of the sender's own device set. A device ignores a CHANGE that names another key."
+    },
+    {
+      "name": "origin",
+      "type": [
+        "null",
+        {
+          "type": "fixed",
+          "name": "ChangeOrigin",
+          "size": 32,
+          "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+        }
+      ],
+      "default": null,
+      "doc": "Null for a record of the device set itself. Otherwise a key of the sender of a record that the set received from another app, the key by which the sending device first knew that sender: the message then carries the owner's layer of that received record, what the owner did with it on the devices of the set. The receiving device finds the sender among the current and the removed keys of the senders it knows. Defined in spec/sync.md, section 21.3."
+    },
+    {
+      "name": "type",
+      "type": "string",
+      "doc": "The full name of the record's type, such as axt.example.v1.Appointment. A record keeps it for its whole life."
+    },
+    {
+      "name": "state",
+      "type": "long",
+      "doc": "The sending device's state stamp of the record, or the version it counted in its place, at least 1. The receiving device counts it as a stamp it has seen and as the highest state stamp of the record that it has seen from another device of its set, if it is higher, and takes nothing else from it."
+    },
+    {
+      "name": "whole",
+      "type": "boolean",
+      "doc": "True when fields holds every field state the sending device holds of the record and the device does not hold the record incompletely. False when fields holds only some of them. A device that does not have a record of its set, or holds only its removal, takes it only from a message in which this is true. For the owner's layer of a received record it is not looked at: a device that holds no layer of the record takes the layer from any message."
+    },
+    {
+      "name": "removal",
+      "type": [
+        "null",
+        {
+          "type": "record",
+          "name": "ChangeRemoval",
+          "doc": "The removal in the state of a record: the mark that the record was deleted, or that its deletion was taken back. Defined in spec/sync.md, section 3.2.",
+          "fields": [
+            {
+              "name": "stamp",
+              "type": "long",
+              "doc": "The stamp of the deletion or of its taking back, at least 1."
+            },
+            {
+              "name": "device",
+              "type": {
+                "type": "fixed",
+                "name": "ChangeRemovalDevice",
+                "size": 32,
+                "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+              },
+              "doc": "The Ed25519 public key of the device that deleted the record or took the deletion back."
+            },
+            {
+              "name": "stands",
+              "type": "boolean",
+              "doc": "True for a removal that stands, a deletion. False for one that was taken back."
+            }
+          ]
+        }
+      ],
+      "default": null,
+      "doc": "The removal the sending device holds of the record, when the message carries it. Null when the device holds none or the message does not carry it; null never takes a removal away."
+    },
+    {
+      "name": "keep",
+      "type": [
+        "null",
+        {
+          "type": "record",
+          "name": "ChangeKeep",
+          "doc": "The keep in the owner's layer of a record received from another app: the mark that the owner keeps the record against a deletion by its sender, or has given that keeping up. Defined in spec/sync.md, section 21.1.",
+          "fields": [
+            {
+              "name": "stamp",
+              "type": "long",
+              "doc": "The stamp of the change that set the keep, at least 1."
+            },
+            {
+              "name": "device",
+              "type": {
+                "type": "fixed",
+                "name": "ChangeKeepDevice",
+                "size": 32,
+                "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+              },
+              "doc": "The Ed25519 public key of the device that set the keep."
+            },
+            {
+              "name": "version",
+              "type": "long",
+              "doc": "The version of the sender's deletion that the owner keeps the record against, or the higher version of the keep it took the place of; or, for a keep that was given up, of the deletion whose keeping the owner gave up; at least 1. The record is kept only against a deletion whose version is not above this one. Of two keeps, the one with the higher version stands, so a keep for an older deletion never takes the place of one for a newer deletion."
+            },
+            {
+              "name": "given_up",
+              "type": "boolean",
+              "default": false,
+              "doc": "False for a keep. True for a keep that the owner gave up, so that the sender's deletion is taken: it keeps nothing. With equal version, stamp and device, a keep given up stands over one that is not."
+            }
+          ]
+        }
+      ],
+      "default": null,
+      "doc": "The keep the sending device holds in the owner's layer of the record, when the message carries it. Null when the device holds none or the message does not carry it; null never takes a keep away. Always null in a message whose origin is null."
+    },
+    {
+      "name": "fields",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "ChangeField",
+          "doc": "The state of one top-level field of the record: its value as the changing device wrote it, with the stamp of that change and the device that made it. Defined in spec/sync.md, section 3.1.",
+          "fields": [
+            {
+              "name": "name",
+              "type": "string",
+              "doc": "The name of the field, as the writer schema named in schema has it."
+            },
+            {
+              "name": "schema",
+              "type": {
+                "type": "fixed",
+                "name": "ChangeFieldSchema",
+                "size": 8,
+                "doc": "The CRC-64-AVRO fingerprint of a schema, as 8 bytes in little-endian order. Defined in spec/envelope.md, section 5."
+              },
+              "doc": "The fingerprint of the writer schema of the record's type with which the changing device wrote the value. It is given for each field, because a device passes on fields that its own schema does not have, under the schema they came with."
+            },
+            {
+              "name": "value",
+              "type": [
+                "null",
+                "bytes"
+              ],
+              "default": null,
+              "doc": "The value of the field: the bytes the changing device wrote, in Avro binary encoding under the type the field has in the schema named in schema. They are passed on unchanged. Null only in a message whose origin is a key: the owner discarded a change of the field of a received record, and the sender's value shows again. A device never writes null here while origin is null."
+            },
+            {
+              "name": "stamp",
+              "type": "long",
+              "doc": "The stamp of the change that gave the field this value, at least 1; or 0 for a field never stamped; or -1 for a field state of unknown age, one taken from a file or a backup, which loses to every other. Never below -1."
+            },
+            {
+              "name": "device",
+              "type": {
+                "type": "fixed",
+                "name": "ChangeFieldDevice",
+                "size": 32,
+                "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+              },
+              "doc": "The Ed25519 public key of the device that made that change."
+            }
+          ]
+        }
+      },
+      "default": [],
+      "doc": "The field states the message carries, 0 to 4096, each field name at most once, in any order. Empty for a message that carries only a removal, and for a record without field states."
+    }
+  ]
+}

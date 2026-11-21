@@ -1,0 +1,110 @@
+{
+  "type": "record",
+  "name": "Error",
+  "namespace": "axt",
+  "doc": "The body of an ERROR message: a message the receiver could not process, and why. Defined in spec/protocol.md. Its schema changes only with a new envelope format.",
+  "fields": [
+    {
+      "name": "to",
+      "type": {
+        "type": "fixed",
+        "name": "ErrorTo",
+        "size": 32,
+        "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+      },
+      "doc": "The Ed25519 public key of the device that sent the reported message: in a live connection the key its HELLO proved, through a relay the key that signed the message. A device ignores an error that names another key."
+    },
+    {
+      "name": "code",
+      "type": {
+        "type": "enum",
+        "name": "ErrorCode",
+        "doc": "Why the receiver could not process the message; spec/protocol.md defines each code. INVALID_MESSAGE: not a valid message of its kind. FORMAT_UNSUPPORTED: an envelope format the receiver does not read. TOO_LARGE: above a size limit of spec/envelope.md. SIGNATURE_INVALID: the signature does not verify. MANIFEST_INVALID: an invalid manifest. OFFER_INVALID: an invalid offer. RECORD_ID_INVALID: an invalid record id. VERSION_INVALID: a version below 1. SCHEMA_UNKNOWN: a fingerprint the receiver has no schema for. NOT_ACCEPTED: a record message without an accepted offer of its type. TYPE_CHANGED: a record under another type than before. UNDECODABLE: a record body that cannot be decoded. DEVICE_REJECTED: a DEVICE_JOIN, DEVICE_ADD or DEVICE_REMOVE the receiver did not apply, as spec/keys.md, section 5, defines. VALUE_INVALID: a record that decodes but holds a value that breaks a rule of its type, named in field. RECORD_UNKNOWN: a CHANGE that does not hold the whole record, for a record the receiver does not have or holds only its removal. PROPOSALS_NOT_TAKEN: a PROPOSAL for a record whose sender takes none from the proposer. The default is for schema resolution only; within one envelope format every symbol is known.",
+        "symbols": [
+          "INVALID_MESSAGE",
+          "FORMAT_UNSUPPORTED",
+          "TOO_LARGE",
+          "SIGNATURE_INVALID",
+          "MANIFEST_INVALID",
+          "OFFER_INVALID",
+          "RECORD_ID_INVALID",
+          "VERSION_INVALID",
+          "SCHEMA_UNKNOWN",
+          "NOT_ACCEPTED",
+          "TYPE_CHANGED",
+          "UNDECODABLE",
+          "DEVICE_REJECTED",
+          "VALUE_INVALID",
+          "RECORD_UNKNOWN",
+          "PROPOSALS_NOT_TAKEN"
+        ],
+        "default": "INVALID_MESSAGE"
+      },
+      "doc": "Why the receiver could not process the message."
+    },
+    {
+      "name": "message_hash",
+      "type": {
+        "type": "fixed",
+        "name": "ErrorMessageHash",
+        "size": 32,
+        "doc": "A SHA-256 hash."
+      },
+      "doc": "The SHA-256 of the reported message as the receiver got it, from its single-object marker to its last byte; through a relay, after opening and removing the padding."
+    },
+    {
+      "name": "record",
+      "type": [
+        "null",
+        {
+          "type": "record",
+          "name": "ErrorRecord",
+          "doc": "The record field of the reported message.",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "doc": "The id as the reported message carried it, which may not be a valid UUID."
+            },
+            {
+              "name": "version",
+              "type": "long",
+              "doc": "The version as the reported message carried it, which may be below 1."
+            }
+          ]
+        }
+      ],
+      "default": null,
+      "doc": "The record field of the reported message, when its signature verified, it carried one and its id is at most 64 bytes long. Null otherwise."
+    },
+    {
+      "name": "fingerprint",
+      "type": [
+        "null",
+        {
+          "type": "fixed",
+          "name": "ErrorFingerprint",
+          "size": 8,
+          "doc": "A CRC-64-AVRO fingerprint, 8 bytes in little-endian order, as spec/envelope.md defines."
+        }
+      ],
+      "default": null,
+      "doc": "The fingerprint the code is about, as spec/protocol.md says for the code: for SCHEMA_UNKNOWN, that of the schema the receiver lacks; for FORMAT_UNSUPPORTED, the fingerprint of the envelope. Null for every other code."
+    },
+    {
+      "name": "field",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null,
+      "doc": "For VALUE_INVALID, the path of the value that breaks a rule, by the field names of the offered schema, as spec/metadata.md defines it: an empty string for the record itself. Null for every other code, and for a path above 1024 bytes."
+    },
+    {
+      "name": "detail",
+      "type": "string",
+      "default": "",
+      "doc": "A description for logs, in English, as plain text on one line of at most 1024 bytes. Empty when there is none. It is not shown to the user as the only explanation."
+    }
+  ]
+}

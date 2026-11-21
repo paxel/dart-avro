@@ -1,0 +1,182 @@
+{
+  "type": "record",
+  "name": "Measurement",
+  "namespace": "axt.example.v1",
+  "doc": "One measured value or count at a point in time, such as a weight, a blood pressure reading or a tally of glasses of water.",
+  "axt.version": 1,
+  "axt.title": "quantity",
+  "axt.label": "Measurement",
+  "axt.label_translations": {
+    "de": "Messung"
+  },
+  "axt.help": "A measured value or a count at a point in time, such as a weight.",
+  "axt.help_translations": {
+    "de": "Ein gemessener Wert oder eine Zählung zu einem Zeitpunkt, etwa ein Gewicht."
+  },
+  "axt.emoji": "📈",
+  "fields": [
+    {
+      "name": "quantity",
+      "type": "string",
+      "default": "",
+      "doc": "What was measured or counted, as the user calls it, such as Weight or Glasses of water.",
+      "axt.label": "Quantity",
+      "axt.label_translations": {
+        "de": "Messgröße"
+      },
+      "axt.help": "What was measured or counted, such as Weight or Glasses of water.",
+      "axt.help_translations": {
+        "de": "Was gemessen oder gezählt wurde, etwa Gewicht oder Gläser Wasser."
+      },
+      "axt.emoji": "📋"
+    },
+    {
+      "name": "value",
+      "type": "double",
+      "doc": "The measured value or the count, in unit.",
+      "axt.label": "Value",
+      "axt.label_translations": {
+        "de": "Wert"
+      },
+      "axt.help": "The measured value or the count.",
+      "axt.help_translations": {
+        "de": "Der gemessene Wert oder die Anzahl."
+      },
+      "axt.emoji": "🔢"
+    },
+    {
+      "name": "unit",
+      "type": "string",
+      "default": "1",
+      "doc": "The unit of value as a case-sensitive code of UCUM, such as kg, Cel or mm[Hg]. A count is 1, or an annotation in braces alone that names what is counted, such as {glass}.",
+      "axt.label": "Unit",
+      "axt.label_translations": {
+        "de": "Einheit"
+      },
+      "axt.help": "The unit as a code of UCUM, such as kg; 1 for a count.",
+      "axt.help_translations": {
+        "de": "Die Einheit als Code von UCUM, etwa kg; 1 für eine Anzahl."
+      },
+      "axt.emoji": "📐",
+      "axt.format": "ucum",
+      "axt.placeholder": "kg",
+      "axt.example": "mm[Hg]",
+      "axt.preferred_length": 10
+    },
+    {
+      "name": "measured_at",
+      "type": {
+        "type": "record",
+        "name": "DateTime",
+        "namespace": "axt",
+        "doc": "A date and time on the wall clock, to the millisecond, either in a time zone of the IANA time zone database, with the offset from UTC and the instant as the writer's zone rules gave them, or floating, on the wall clock of wherever the user is, without zone, offset and instant. Defined in spec/time.md. Its schema never changes.",
+        "fields": [
+          {
+            "name": "year",
+            "type": "int",
+            "doc": "The year of the proleptic Gregorian calendar, 1 to 9999."
+          },
+          {
+            "name": "month",
+            "type": "int",
+            "doc": "The month, 1 (January) to 12 (December)."
+          },
+          {
+            "name": "day",
+            "type": "int",
+            "doc": "The day of the month, 1 to the number of days of that month in that year."
+          },
+          {
+            "name": "hour",
+            "type": "int",
+            "doc": "The hour on the wall clock, 0 to 23."
+          },
+          {
+            "name": "minute",
+            "type": "int",
+            "doc": "The minute, 0 to 59."
+          },
+          {
+            "name": "second",
+            "type": "int",
+            "doc": "The second, 0 to 59; a leap second is not written as 60."
+          },
+          {
+            "name": "millisecond",
+            "type": "int",
+            "doc": "The millisecond, 0 to 999."
+          },
+          {
+            "name": "zone",
+            "type": [
+              "null",
+              "string"
+            ],
+            "default": null,
+            "doc": "The name of the time zone in the IANA time zone database, such as Europe/Berlin. Null for a floating time; then offset_seconds and instant_ms are null as well."
+          },
+          {
+            "name": "offset_seconds",
+            "type": [
+              "null",
+              "int"
+            ],
+            "default": null,
+            "doc": "The offset of the wall clock from UTC, in seconds, -64800 to 64800, as the writer's rules of the zone gave it at the instant, such as 3600 for 01:00 east of UTC. Null for a floating time, and only then."
+          },
+          {
+            "name": "instant_ms",
+            "type": [
+              "null",
+              "long"
+            ],
+            "default": null,
+            "doc": "The instant, in milliseconds since 1970-01-01T00:00:00Z without leap seconds: the wall clock read as if it were UTC, minus offset_seconds. Null for a floating time, and only then."
+          }
+        ]
+      },
+      "doc": "When the value was measured or counted.",
+      "axt.label": "Measured at",
+      "axt.label_translations": {
+        "de": "Gemessen am"
+      },
+      "axt.help": "When the value was measured or counted.",
+      "axt.help_translations": {
+        "de": "Wann der Wert gemessen oder gezählt wurde."
+      },
+      "axt.emoji": "🕒",
+      "axt.anchor": "instant"
+    },
+    {
+      "name": "subject",
+      "type": "string",
+      "default": "",
+      "doc": "Who or what was measured, as text, such as the name of a pet. Empty when it is the user.",
+      "axt.label": "Subject",
+      "axt.label_translations": {
+        "de": "Gemessen an"
+      },
+      "axt.help": "Who or what was measured, such as the name of a pet; empty for the user.",
+      "axt.help_translations": {
+        "de": "Wer oder was gemessen wurde, etwa der Name eines Tiers; leer für den Nutzer selbst."
+      },
+      "axt.emoji": "🎯"
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "default": "",
+      "doc": "Free notes on the measurement, as plain text; lines are separated by LF. Empty when there are none.",
+      "axt.label": "Notes",
+      "axt.label_translations": {
+        "de": "Notizen"
+      },
+      "axt.help": "Anything else about the measurement.",
+      "axt.help_translations": {
+        "de": "Alles Weitere zur Messung."
+      },
+      "axt.emoji": "📝",
+      "axt.multiline": true
+    }
+  ]
+}

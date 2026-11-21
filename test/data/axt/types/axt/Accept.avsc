@@ -1,0 +1,34 @@
+{
+  "type": "record",
+  "name": "Accept",
+  "namespace": "axt",
+  "doc": "The body of an ACCEPT message: the types of one offer that the receiver takes. Defined in spec/protocol.md. Its schema changes only with a new envelope format.",
+  "fields": [
+    {
+      "name": "to",
+      "type": {
+        "type": "fixed",
+        "name": "AcceptTo",
+        "size": 32,
+        "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+      },
+      "doc": "The Ed25519 public key that signed the offer, the key of one device of its sender. A device ignores an answer that names another key."
+    },
+    {
+      "name": "offer_id",
+      "type": {
+        "type": "string",
+        "logicalType": "uuid"
+      },
+      "doc": "The id of the offer this message answers."
+    },
+    {
+      "name": "types",
+      "type": {
+        "type": "array",
+        "items": "string"
+      },
+      "doc": "The full names of the offered types the receiver takes, 1 to 256, each a type of the offer and each at most once."
+    }
+  ]
+}
