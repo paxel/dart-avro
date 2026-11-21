@@ -139,7 +139,7 @@ void main() {
   });
 
   group('a damaged file fails as from memory', () {
-    for (final compression in ['null', 'deflate', 'snappy']) {
+    for (final compression in _compressions) {
       final bytes = threeBlocks(compression);
       test('$compression: cut off at every byte', () async {
         for (var length = 0; length < bytes.length; length++) {
@@ -328,7 +328,93 @@ void main() {
     );
   });
 
+  group('cancel', () {
+    test('cancels the source, and records cannot be read after', () async {
+      final cancelled = Completer<void>();
+      final source = StreamController<List<int>>(onCancel: cancelled.complete);
+      source.add(threeBlocks('null'));
+      final reader = await AvroFileStreamReader.open(source.stream);
+      await reader.cancel();
+      await cancelled.future;
+      expect(reader.records, throwsStateError);
+      await reader.cancel();
+    });
+
+    test('ends a running stream of records without an error', () async {
+      final bytes = threeBlocks('null');
+      // The whole file, but the stream does not end.
+      final source = StreamController<List<int>>()..add(bytes);
+      final reader = await AvroFileStreamReader.open(source.stream);
+      final records = <Object?>[];
+      final done = Completer<void>();
+      reader.records().listen(
+        (r) {
+          records.add(r);
+          if (records.length == 2) reader.cancel();
+        },
+        onError: done.completeError,
+        onDone: done.complete,
+      );
+      await done.future;
+      expect(records, hasLength(2));
+    });
+
+    test('ends a stream of records that waits for input', () async {
+      final bytes = threeBlocks('null');
+      // All but the end of the last block, and the stream does not end.
+      final source = StreamController<List<int>>()
+        ..add(Uint8List.sublistView(bytes, 0, bytes.length - 5));
+      final reader = await AvroFileStreamReader.open(source.stream);
+      final records = reader.records().toList();
+      await Future<void>.delayed(Duration.zero);
+      await reader.cancel();
+      expect(await records, hasLength(4));
+    });
+  });
+
   group('limits', () {
+    test('a header longer than maxBlockBytes is rejected', () async {
+      final writer = AvroFileWriter(_int, metadata: {'x': Uint8List(2000)});
+      final bytes = writer.close();
+      const limits = AvroLimits(maxBlockBytes: 1000);
+      for (final chunk in [1, 100, bytes.length]) {
+        await expectLater(
+          AvroFileStreamReader.open(chunked(bytes, chunk), limits: limits),
+          throwsA(
+            isA<LimitExceededException>().having(
+              (e) => e.limit,
+              'limit',
+              'maxBlockBytes',
+            ),
+          ),
+        );
+      }
+      final reader = await AvroFileStreamReader.open(
+        chunked(bytes, 100),
+        limits: const AvroLimits(maxBlockBytes: 3000),
+      );
+      expect(reader.header.metadata['x'], hasLength(2000));
+    });
+
+    test('a huge metadata value fails before it is read', () async {
+      Stream<List<int>> source() async* {
+        yield [0x4f, 0x62, 0x6a, 1, ..._int.encode(1), ..._int.encode(1)];
+        yield [0x78, ..._int.encode(100 * 1024 * 1024)];
+        throw StateError('read beyond the length of the value');
+      }
+
+      await expectLater(
+        AvroFileStreamReader.open(source()),
+        throwsA(
+          isA<LimitExceededException>().having(
+            (e) => e.limit,
+            'limit',
+            'maxBlockBytes',
+          ),
+        ),
+      );
+    });
+
     test('a huge declared block fails before its data is read', () async {
       final header = file(schema: '"bytes"', blocks: []);
       final prefix = [

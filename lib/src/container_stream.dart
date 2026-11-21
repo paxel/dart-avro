@@ -13,7 +13,8 @@ import 'limits.dart';
 /// [open] reads the header; [records] decodes the blocks after it as they arrive. The
 /// records, the errors and their offsets are those of `AvroFileReader` for the same bytes,
 /// except that a block declaring more compressed bytes than `maxBlockBytes` throws
-/// [LimitExceededException] before it is read.
+/// [LimitExceededException] before it is read, and that a header longer than `maxBlockBytes`
+/// throws [LimitExceededException] as well.
 final class AvroFileStreamReader {
   AvroFileStreamReader._(this._input, this.limits, this.header);
 
@@ -22,7 +23,8 @@ final class AvroFileStreamReader {
   /// Completes with [DecodeException] if [input] is not a container file, and with
   /// [UnsupportedCompressionException] if its blocks use a compression other than `null`,
   /// `deflate`, `snappy`, `bzip2`, `xz` and `zstandard`; the subscription to [input] is
-  /// cancelled then. An error of [input] itself is passed on as it is.
+  /// cancelled then. Completes with [LimitExceededException] as soon as the header needs more
+  /// than `maxBlockBytes` of [limits]. An error of [input] itself is passed on as it is.
   static Future<AvroFileStreamReader> open(
     Stream<List<int>> input, {
     AvroLimits limits = const AvroLimits(),
@@ -38,15 +40,28 @@ final class AvroFileStreamReader {
             end: bytes.end,
             partial: !bytes.done,
           );
+          _checkHeaderSize(limits, end);
           bytes.start = end;
           return AvroFileStreamReader._(bytes, limits, header);
         } on InputUnderflow catch (e) {
+          // Fails before the bytes are buffered.
+          _checkHeaderSize(limits, e.end);
           await bytes.fill(e.end);
         }
       }
     } on Object {
       await bytes.cancel();
       rethrow;
+    }
+  }
+
+  static void _checkHeaderSize(AvroLimits limits, int size) {
+    final max = limits.maxBlockBytes;
+    if (max != null && size > max) {
+      throw LimitExceededException(
+        'the header needs more than $max bytes',
+        limit: 'maxBlockBytes',
+      );
     }
   }
 
@@ -68,8 +83,9 @@ final class AvroFileStreamReader {
   ///
   /// The stream ends with a [DecodeException] for a malformed or cut-off block, and with a
   /// [LimitExceededException] as soon as a block's compressed or decompressed size or the
-  /// total exceeds [limits]. Throws [StateError] if called a second time.
+  /// total exceeds [limits]. Throws [StateError] if called a second time or after [cancel].
   Stream<Object?> records([AvroCodec? codec]) {
+    if (_input.cancelled) throw StateError('the reader is cancelled');
     if (_read) throw StateError('the records can be read only once');
     _read = true;
     return _records(codec);
@@ -83,14 +99,17 @@ final class AvroFileStreamReader {
         limits,
         recordCodec(header, limits, codec),
       );
-      while (true) {
+      while (!input.cancelled) {
         if (input.start == input.end) {
           if (input.done) break;
           await input.fill(input.base + input.end + 1);
           continue;
         }
-        final (count, data, start, dataStart) = await _frame();
+        final frame = await _frame();
+        if (frame == null) break;
+        final (count, data, start, dataStart) = frame;
         for (final record in blocks.decode(count, data, start, dataStart)) {
+          if (input.cancelled) return;
           yield record;
         }
       }
@@ -99,10 +118,11 @@ final class AvroFileStreamReader {
     }
   }
 
-  /// The next block's frame, with its data and the file offsets of its start and data.
-  Future<(int, Uint8List, int, int)> _frame() async {
+  /// The next block's frame, with its data and the file offsets of its start and data, or
+  /// null if the reader was cancelled while waiting for it.
+  Future<(int, Uint8List, int, int)?> _frame() async {
     final input = _input;
-    while (true) {
+    while (!input.cancelled) {
       final reader = BinaryReader(
         input.bytes,
         input.start,
@@ -134,7 +154,12 @@ final class AvroFileStreamReader {
         );
       }
     }
+    return null;
   }
+
+  /// Cancels the subscription to the input. A stream of [records] that is running ends,
+  /// without an error; [records] cannot be called after.
+  Future<void> cancel() => _input.cancel();
 
   /// Fails before a block's data is buffered if it is larger than the block limit.
   void _checkCompressedSize(int size) {
@@ -165,6 +190,9 @@ final class _Input {
   /// Whether the stream has ended.
   bool done = false;
 
+  /// Whether the subscription is cancelled.
+  bool cancelled = false;
+
   /// Reads chunks until the bytes reach the file offset [fileEnd] or the stream ends.
   Future<void> fill(int fileEnd) async {
     while (!done && base + end < fileEnd) {
@@ -192,7 +220,87 @@ final class _Input {
   }
 
   Future<void> cancel() async {
+    if (cancelled) return;
+    cancelled = true;
     done = true;
     await _source.cancel();
+  }
+}
+
+/// Writes an object container file to a stream sink, one block at a time.
+///
+/// The header is written to the sink at once. Records are added with [add]; a block is
+/// written when it reaches [blockSize] bytes before compression, or at [flush]. [close]
+/// writes the last block and closes the sink. The bytes are those `AvroFileWriter` returns
+/// for the same records, flushes and [syncMarker].
+final class AvroFileStreamWriter {
+  /// A writer of records encoded with [codec]'s writer schema to [sink].
+  ///
+  /// [metadata] is written first, in its order, then `avro.codec` (always) and
+  /// `avro.schema`; a key starting with `avro.` is reserved and throws [ArgumentError].
+  /// [schemaJson] is written exactly as given and defaults to the writer schema's text; it
+  /// must have the writer schema's canonical form. [syncMarker] defaults to 16 random
+  /// bytes. Throws [UnsupportedCompressionException] for a [compression] other than
+  /// `null`, `deflate`, `snappy`, `bzip2`, `xz` and `zstandard`; nothing is written to
+  /// [sink] then. `xz` blocks are stored in the format without being compressed, as
+  /// `archive` writes them.
+  AvroFileStreamWriter(
+    this.codec,
+    StreamSink<List<int>> sink, {
+    this.compression = 'null',
+    Map<String, Uint8List> metadata = const {},
+    Uint8List? syncMarker,
+    String? schemaJson,
+    this.blockSize = 64 * 1024,
+  }) : _sink = sink,
+       syncMarker = syncMarker ?? randomSyncMarker() {
+    final header = encodeHeader(
+      codec,
+      compression,
+      metadata,
+      this.syncMarker,
+      schemaJson,
+    );
+    _blocks = BlockEncoder(codec, compression, this.syncMarker, blockSize);
+    _sink.add(header);
+  }
+
+  final StreamSink<List<int>> _sink;
+  late final BlockEncoder _blocks;
+  bool _closed = false;
+
+  /// The codec the records are encoded with.
+  final AvroCodec codec;
+
+  /// `null`, `deflate`, `snappy`, `bzip2`, `xz` or `zstandard`.
+  final String compression;
+
+  /// The 16 bytes that end every block.
+  final Uint8List syncMarker;
+
+  /// The size in bytes, before compression, at which a block ends by itself.
+  final int blockSize;
+
+  /// Adds one record, and writes the block if it has reached [blockSize]. Throws
+  /// [EncodeException] if the record does not fit the writer schema; nothing is written
+  /// and the block is unchanged then. Throws [StateError] after [close].
+  void add(Object? record) {
+    if (_closed) throw StateError('the writer is closed');
+    if (_blocks.add(record)) flush();
+  }
+
+  /// Writes the current block, if it holds any record. Throws [StateError] after [close].
+  void flush() {
+    if (_closed) throw StateError('the writer is closed');
+    final block = _blocks.take();
+    if (block != null) _sink.add(block);
+  }
+
+  /// Writes the last block and closes the sink; completes when the sink is closed. The
+  /// writer cannot be used after; a second call throws [StateError].
+  Future<void> close() {
+    flush();
+    _closed = true;
+    return _sink.close();
   }
 }

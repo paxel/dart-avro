@@ -524,56 +524,11 @@ final class AvroFileWriter {
     Uint8List? syncMarker,
     String? schemaJson,
     this.blockSize = 64 * 1024,
-  }) : syncMarker = syncMarker ?? _randomSync() {
-    if (!supportedCompressions.contains(compression)) {
-      throw UnsupportedCompressionException(
-        'blocks cannot be compressed with "$compression"; only $_supportedNames',
-        compression: compression,
-      );
-    }
-    if (this.syncMarker.length != 16) {
-      throw ArgumentError.value(syncMarker, 'syncMarker', 'must be 16 bytes');
-    }
-    final text = schemaJson ?? codec.writer.jsonText;
-    if (schemaJson != null &&
-        Schema.parse(schemaJson, limits: codec.limits).canonicalForm !=
-            codec.writer.canonicalForm) {
-      throw ArgumentError.value(
-        schemaJson,
-        'schemaJson',
-        "does not have the codec's writer schema",
-      );
-    }
-    for (final key in metadata.keys) {
-      if (key.startsWith('avro.')) {
-        throw ArgumentError.value(
-          key,
-          'metadata',
-          'keys starting with avro. are reserved',
-        );
-      }
-    }
-    final header = BinaryWriter()..writeFixed(containerMagic);
-    final entries = {
-      ...metadata,
-      'avro.codec': Uint8List.fromList(utf8.encode(compression)),
-      'avro.schema': Uint8List.fromList(utf8.encode(text)),
-    };
-    header.writeLong(entries.length);
-    for (final e in entries.entries) {
-      header
-        ..writeString(e.key)
-        ..writeBytes(e.value);
-    }
-    header
-      ..writeLong(0)
-      ..writeFixed(this.syncMarker);
-    _out.writeFixed(header.toBytes());
-  }
-
-  static Uint8List _randomSync() {
-    final random = Random.secure();
-    return Uint8List.fromList(List.generate(16, (_) => random.nextInt(256)));
+  }) : syncMarker = syncMarker ?? randomSyncMarker() {
+    _out.writeFixed(
+      encodeHeader(codec, compression, metadata, this.syncMarker, schemaJson),
+    );
+    _blocks = BlockEncoder(codec, compression, this.syncMarker, blockSize);
   }
 
   /// The codec the records are encoded with.
@@ -589,24 +544,120 @@ final class AvroFileWriter {
   final int blockSize;
 
   final BinaryWriter _out = BinaryWriter();
-  BinaryWriter _block = BinaryWriter();
-  int _count = 0;
+  late final BlockEncoder _blocks;
   bool _closed = false;
 
   /// Adds one record. Throws [EncodeException] if it does not fit the writer schema; the
   /// file is unchanged then.
   void add(Object? record) {
     if (_closed) throw StateError('the writer is closed');
-    final datum = codec.encode(record);
-    _block.writeFixed(datum);
-    _count++;
-    if (_block.length >= blockSize) flush();
+    if (_blocks.add(record)) flush();
   }
 
   /// Ends the current block, if it holds any record.
   void flush() {
     if (_closed) throw StateError('the writer is closed');
-    if (_count == 0) return;
+    final block = _blocks.take();
+    if (block != null) _out.writeFixed(block);
+  }
+
+  /// Ends the last block and returns the whole file. The writer cannot be used after.
+  Uint8List close() {
+    flush();
+    _closed = true;
+    return _out.toBytes();
+  }
+}
+
+/// 16 random bytes, to end the blocks of a file.
+Uint8List randomSyncMarker() {
+  final random = Random.secure();
+  return Uint8List.fromList(List.generate(16, (_) => random.nextInt(256)));
+}
+
+/// The header of a container file written with [codec] and [compression], with
+/// [metadata] first, then `avro.codec` and `avro.schema`, and [syncMarker]. Throws as
+/// `AvroFileWriter` documents.
+Uint8List encodeHeader(
+  AvroCodec codec,
+  String compression,
+  Map<String, Uint8List> metadata,
+  Uint8List syncMarker,
+  String? schemaJson,
+) {
+  if (!supportedCompressions.contains(compression)) {
+    throw UnsupportedCompressionException(
+      'blocks cannot be compressed with "$compression"; only $_supportedNames',
+      compression: compression,
+    );
+  }
+  if (syncMarker.length != 16) {
+    throw ArgumentError.value(syncMarker, 'syncMarker', 'must be 16 bytes');
+  }
+  final text = schemaJson ?? codec.writer.jsonText;
+  if (schemaJson != null &&
+      Schema.parse(schemaJson, limits: codec.limits).canonicalForm !=
+          codec.writer.canonicalForm) {
+    throw ArgumentError.value(
+      schemaJson,
+      'schemaJson',
+      "does not have the codec's writer schema",
+    );
+  }
+  for (final key in metadata.keys) {
+    if (key.startsWith('avro.')) {
+      throw ArgumentError.value(
+        key,
+        'metadata',
+        'keys starting with avro. are reserved',
+      );
+    }
+  }
+  final header = BinaryWriter()..writeFixed(containerMagic);
+  final entries = {
+    ...metadata,
+    'avro.codec': Uint8List.fromList(utf8.encode(compression)),
+    'avro.schema': Uint8List.fromList(utf8.encode(text)),
+  };
+  header.writeLong(entries.length);
+  for (final e in entries.entries) {
+    header
+      ..writeString(e.key)
+      ..writeBytes(e.value);
+  }
+  header
+    ..writeLong(0)
+    ..writeFixed(syncMarker);
+  return header.toBytes();
+}
+
+/// Collects records into blocks and encodes each block, compressed, with its record count
+/// and sync marker.
+final class BlockEncoder {
+  BlockEncoder(this.codec, this.compression, this.syncMarker, this.blockSize);
+
+  final AvroCodec codec;
+  final String compression;
+  final Uint8List syncMarker;
+  final int blockSize;
+
+  BinaryWriter _block = BinaryWriter();
+  int _count = 0;
+
+  /// Adds one record to the current block; true if the block has reached [blockSize].
+  /// Throws [EncodeException] if it does not fit the writer schema; the block is unchanged
+  /// then.
+  bool add(Object? record) {
+    final datum = codec.encode(record);
+    _block.writeFixed(datum);
+    _count++;
+    return _block.length >= blockSize;
+  }
+
+  /// The current block as written to the file, and a new block started; null if the
+  /// current block holds no record.
+  Uint8List? take() {
+    if (_count == 0) return null;
     final raw = _block.toBytes();
     final data = switch (compression) {
       'deflate' => ZLibEncoder(raw: true).convert(raw),
@@ -617,12 +668,13 @@ final class AvroFileWriter {
       'zstandard' => ZstdEncoder().encodeBytes(raw, checksum: true),
       _ => raw,
     };
-    _out
+    final out = BinaryWriter()
       ..writeLong(_count)
       ..writeBytes(data)
       ..writeFixed(syncMarker);
     _block = BinaryWriter();
     _count = 0;
+    return out.toBytes();
   }
 
   /// Snappy, followed by the big-endian CRC32 of [raw].
@@ -631,12 +683,5 @@ final class AvroFileWriter {
     final data = Uint8List(compressed.length + 4)..setAll(0, compressed);
     ByteData.sublistView(data).setUint32(compressed.length, crc32(raw));
     return data;
-  }
-
-  /// Ends the last block and returns the whole file. The writer cannot be used after.
-  Uint8List close() {
-    flush();
-    _closed = true;
-    return _out.toBytes();
   }
 }
