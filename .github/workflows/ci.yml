@@ -27,6 +27,20 @@ jobs:
       packages: |
         dart .
 
+  # The archive pub.dev would get: dart pub publish --dry-run fails on any warning.
+  pub:
+    name: pub.dev dry run
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@2286a0c042b44434fe26d292bbce8d34f7ec662b # v1.8.2
+        with:
+          sdk: 3.14.0
+      - run: dart pub get --enforce-lockfile
+      - run: dart pub publish --dry-run
+
   # The JavaScript is the documentation site's, plain JavaScript type-checked by tsc (checkJs).
   # The part is named site: the gate's tests are the site tests, which measure the site build
   # in scripts/.

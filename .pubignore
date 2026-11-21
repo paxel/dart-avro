@@ -1,0 +1,33 @@
+# What the pub.dev archive leaves out: the repository's gates, the docs site and its Node
+# tooling, the interop and fuzz tools, and the decisions. A .pubignore replaces .gitignore
+# for pub, so the generated directories are listed again.
+.dart_tool/
+build/
+coverage/
+doc/api/
+node_modules/
+site-dist/
+.github/
+.claude_here/
+.fvmrc
+.nvmrc
+.prettierignore
+.prettierrc
+AGENTS.md
+CLAUDE.md
+CONTEXT.md
+code-scanning-ignores.toml
+coverage-floors.toml
+docs/
+eslint.config.js
+osv-scanner.toml
+package-lock.json
+package.json
+scripts/
+site/
+sonar-project.properties
+tests/
+tool/
+tsconfig.json
+test/fuzz_test.dart
+test/site_examples_test.dart
