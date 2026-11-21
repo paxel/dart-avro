@@ -23,13 +23,23 @@ final class GenerateException implements Exception {
 /// A schema file: its path as given and its text.
 typedef SchemaFile = ({String path, String text});
 
-/// The Dart library of the classes of every record and the enums of every enum in [files]. Throws [GenerateException]
-/// if a file is not a valid schema or a name cannot be generated.
-String generateLibrary(List<SchemaFile> files) {
+/// The Dart library of the classes of every record and the enums of every enum in [files].
+///
+/// A full name defined in several files gets one Dart type when the definitions have the same
+/// canonical form; the first definition is used, and [warn] is told if the others differ in
+/// their docs or attributes. The types of a namespace in [prefixes] get its prefix before
+/// their names. Throws [GenerateException] if a file is not a valid schema, two definitions
+/// differ, or a name cannot be generated.
+String generateLibrary(
+  List<SchemaFile> files, {
+  Map<String, String> prefixes = const {},
+  void Function(String message)? warn,
+}) {
   final classes = <_Class>[];
-  final definedIn = <String, String>{};
+  final first = <String, ({NamedSchema schema, String path})>{};
   final classOf = <NamedSchema, _Class>{};
   final classNames = <String, NamedSchema>{};
+  final usedPrefixes = <String>{};
   for (final file in files) {
     final Schema root;
     try {
@@ -38,32 +48,48 @@ String generateLibrary(List<SchemaFile> files) {
       throw GenerateException('${file.path}: $e');
     }
     for (final named in _namedTypes(root)) {
-      final earlier = definedIn[named.fullName];
+      final earlier = first[named.fullName];
       if (earlier != null) {
-        throw GenerateException(
-          '${file.path}: "${named.fullName}" is already defined in $earlier',
-        );
+        if (named.canonicalForm != earlier.schema.canonicalForm) {
+          throw GenerateException(
+            '${file.path}: "${named.fullName}" is defined differently in '
+            '${earlier.path}',
+          );
+        }
+        if (_ownJson(named) != _ownJson(earlier.schema)) {
+          warn?.call(
+            '"${named.fullName}" in ${file.path} differs from ${earlier.path} in its '
+            'docs or attributes; the definition in ${earlier.path} is used',
+          );
+        }
+        final c = classOf[earlier.schema];
+        if (c != null) classOf[named] = c;
+        continue;
       }
-      definedIn[named.fullName] = file.path;
+      first[named.fullName] = (schema: named, path: file.path);
       if (named is FixedSchema) continue;
-      final name = className(named.name);
-      if (name == null) {
+      final simple = className(named.name);
+      if (simple == null) {
         throw GenerateException(
           '${file.path}: the ${named.type} "${named.fullName}" has no Dart name',
         );
       }
+      final prefix = prefixes[named.namespace];
+      if (prefix != null) usedPrefixes.add(named.namespace!);
+      final name = '${prefix ?? ''}$simple';
       if (clashingTypeNames.contains(name)) {
         throw GenerateException(
-          '${file.path}: the class $name of "${named.fullName}" would clash with $name '
-          'of dart:core, dart:typed_data or package:avro; a namespace prefix will make '
-          'it possible',
+          '${file.path}: the Dart name $name of "${named.fullName}" would clash with '
+          '$name of dart:core, dart:typed_data or package:avro; '
+          '${_suggestion([named], prefixes)}',
         );
       }
       final other = classNames[name];
       if (other != null) {
         throw GenerateException(
           '${file.path}: "${named.fullName}" and "${other.fullName}" '
-          '(${definedIn[other.fullName]}) both give the class $name',
+          '(${first[other.fullName]!.path}) both give the Dart name $name; '
+          '${_suggestion([named, other], prefixes)}',
         );
       }
       classNames[name] = named;
@@ -81,6 +107,13 @@ String generateLibrary(List<SchemaFile> files) {
       classOf[named] = c;
     }
   }
+  for (final namespace in prefixes.keys) {
+    if (!usedPrefixes.contains(namespace)) {
+      warn?.call(
+        'no record or enum is in the namespace $namespace of --prefix',
+      );
+    }
+  }
   final out = _Library(classOf);
   for (final c in classes) {
     switch (c.schema) {
@@ -92,6 +125,60 @@ String generateLibrary(List<SchemaFile> files) {
     }
   }
   return out.finish(files);
+}
+
+/// How to resolve a clash of the Dart names of [types]: the `--prefix` to add for the
+/// namespace of the first of them that has none.
+String _suggestion(List<NamedSchema> types, Map<String, String> prefixes) {
+  for (final t in types) {
+    final namespace = t.namespace;
+    if (namespace != null && !prefixes.containsKey(namespace)) {
+      final prefix = [
+        for (final part in namespace.split('.')) className(part) ?? '',
+      ].join();
+      return 'add --prefix $namespace=$prefix';
+    }
+  }
+  return 'rename one of them, or choose other prefixes';
+}
+
+/// The JSON of a named type's own definition, with every named type in it given by its full
+/// name and the keys sorted: two definitions of one canonical form differ in their docs or
+/// attributes if this differs.
+String _ownJson(NamedSchema type) {
+  Object? sorted(Object? json) => switch (json) {
+    final Map<String, Object?> map => {
+      for (final key in map.keys.toList()..sort()) key: sorted(map[key]),
+    },
+    final List<Object?> list => [for (final e in list) sorted(e)],
+    _ => json,
+  };
+  Object? json(Schema s, {bool root = false}) {
+    switch (s) {
+      case NamedSchema() when !root:
+        return s.fullName;
+      case NamedSchema():
+        final out = {...s.json! as Map<String, Object?>}..remove('namespace');
+        out['name'] = s.fullName;
+        out['aliases'] = s.aliases;
+        if (s is RecordSchema) {
+          out['fields'] = [
+            for (final f in s.fields) {...f.json, 'type': json(f.schema)},
+          ];
+        }
+        return out;
+      case ArraySchema(:final items):
+        return {...s.json! as Map<String, Object?>, 'items': json(items)};
+      case MapSchema(:final values):
+        return {...s.json! as Map<String, Object?>, 'values': json(values)};
+      case UnionSchema(:final branches):
+        return [for (final b in branches) json(b)];
+      case PrimitiveSchema():
+        return s.json;
+    }
+  }
+
+  return jsonEncode(sorted(json(type, root: true)));
 }
 
 /// The named types of [root], each once, in the order of their definitions.

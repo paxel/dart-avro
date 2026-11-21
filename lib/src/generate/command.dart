@@ -12,7 +12,14 @@ Writes one Dart library with an immutable class for every record of the schemas.
 
   <schemas...>         .avsc files, or directories searched for .avsc files
   -o, --output <file>  the Dart file to write
+  --prefix <ns>=<P>    put P before the names of the types of the namespace ns, as in
+                       --prefix axt=Axt for AxtDateTime; repeatable
   -h, --help           print this help''';
+
+final _namespace = RegExp(
+  r'^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$',
+);
+final _prefix = RegExp(r'^[A-Z][A-Za-z0-9]*$');
 
 /// Runs the command with [args], writing messages to [out] and [err]; returns the exit code:
 /// 0 on success, 2 for a usage error, 1 for any other failure. Nothing is written on a
@@ -23,6 +30,7 @@ Future<int> runGenerate(
   required StringSink err,
 }) async {
   final inputs = <String>[];
+  final prefixes = <String, String>{};
   String? output;
   int usage(String message) {
     err
@@ -51,6 +59,28 @@ Future<int> runGenerate(
         return usage('$a needs a file');
       }
       if (output.isEmpty) return usage('$a needs a file');
+    } else if (options && (a == '--prefix' || a.startsWith('--prefix='))) {
+      final String value;
+      if (a.startsWith('--prefix=')) {
+        value = a.substring('--prefix='.length);
+      } else if (i + 1 < args.length) {
+        value = args[++i];
+      } else {
+        return usage('--prefix needs <namespace>=<Prefix>');
+      }
+      final eq = value.indexOf('=');
+      final namespace = eq < 0 ? '' : value.substring(0, eq);
+      final prefix = eq < 0 ? '' : value.substring(eq + 1);
+      if (!_namespace.hasMatch(namespace) || !_prefix.hasMatch(prefix)) {
+        return usage(
+          '--prefix "$value" is not <namespace>=<Prefix>, with a Prefix in '
+          'UpperCamelCase such as axt=Axt',
+        );
+      }
+      if (prefixes.containsKey(namespace)) {
+        return usage('the namespace $namespace has two prefixes');
+      }
+      prefixes[namespace] = prefix;
     } else if (options && a.startsWith('-') && a != '-') {
       return usage('unknown option $a');
     } else {
@@ -62,7 +92,11 @@ Future<int> runGenerate(
 
   try {
     final files = await _schemaFiles(inputs);
-    final library = generateLibrary(files);
+    final library = generateLibrary(
+      files,
+      prefixes: prefixes,
+      warn: (message) => err.writeln('avro:generate: warning: $message'),
+    );
     await _write(output, library);
   } on GenerateException catch (e) {
     err.writeln('avro:generate: ${e.message}');

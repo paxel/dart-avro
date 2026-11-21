@@ -110,6 +110,10 @@ const _loose =
     '"fields": [{"name": "inner", "type": {"type": "record", "name": "Deep", '
     '"fields": [{"name": "n", "type": "int"}]}}, {"name": "again", "type": "Deep"}]}]';
 
+const _dup1 =
+    '{"type": "record", "name": "dup.Shared", "doc": "First.", "fields": '
+    '[{"name": "kind", "type": {"type": "enum", "name": "Kind", "symbols": ["A", "B"]}}]}';
+
 const _program = r'''
 import 'dart:convert';
 import 'dart:io';
@@ -331,6 +335,12 @@ void main() {
   final neon = AvroCodec(writer: newer).encode({'shade': 'NEON'});
   check('a reader enum default', TypedCodec(Paint.avroType, writer: newer).decode(neon) ==
       const Paint(shade: Shade.light));
+  roundTrip('merged', User.avroType, const User(shared: Shared(kind: Kind.b)),
+      {'shared': {'kind': 'B'}});
+  check('the first definition wins', (Shared.avroType.schema as RecordSchema).doc == 'First.');
+  roundTrip('prefixed dart:core name', XDateTime.avroType, XDateTime(at: stampMs), {'at': stampMs});
+  roundTrip('same simple name', Same.avroType, const Same(a: 1), {'a': 1});
+  roundTrip('same simple name, prefixed', QSame.avroType, const QSame(b: 'b'), {'b': 'b'});
   roundTrip('minimal', Minimal.avroType, const Minimal(name: 'n', count: 1), {'name': 'n', 'count': 1});
 
   check('deep equality', all() == all() && all().hashCode == all().hashCode);
@@ -410,6 +420,28 @@ void main() {
     final minimalLibrary = File(minimal).readAsStringSync();
     expect(minimalLibrary, isNot(contains('dart:typed_data')));
     expect(minimalLibrary, isNot(contains('_deep')));
+    // One type defined in three files: the first definition wins; a differing doc warns.
+    write('merge/dup1.avsc', _dup1);
+    write(
+      'merge/dup2.avsc',
+      '{"type": "record", "name": "dup.User", "fields": [{"name": "shared", "type": '
+          '${_dup1.replaceFirst('First.', 'Second.')}}]}',
+    );
+    write('merge/dup3.avsc', _dup1);
+    // A dart:core name and one simple name in two namespaces, both resolved by prefixes.
+    write(
+      'merge/x_date_time.avsc',
+      '{"type": "record", "name": "x.DateTime", "fields": '
+          '[{"name": "at", "type": {"type": "long", "logicalType": "timestamp-millis"}}]}',
+    );
+    write(
+      'merge/same_p.avsc',
+      '{"type": "record", "name": "p.Same", "fields": [{"name": "a", "type": "int"}]}',
+    );
+    write(
+      'merge/same_q.avsc',
+      '{"type": "record", "name": "q.Same", "fields": [{"name": "b", "type": "string"}]}',
+    );
     final output = '${_dir.path}/all.g.dart';
     final (code, messages) = await _generate([
       '${_dir.path}/all.avsc',
@@ -417,8 +449,28 @@ void main() {
       '--output',
       output,
       '${_dir.path}/more',
+      '--prefix',
+      'x=X',
+      '--prefix=q=Q',
+      '--prefix',
+      'unused.ns=Unused',
+      '${_dir.path}/merge',
     ]);
     expect(code, 0, reason: messages);
+    expect(
+      messages,
+      contains(
+        'warning: "dup.Shared" in ${_dir.path}/merge/dup2.avsc differs from '
+        '${_dir.path}/merge/dup1.avsc',
+      ),
+    );
+    expect(messages, isNot(contains('dup3.avsc')));
+    expect(messages, isNot(contains('"dup.Kind"')));
+    expect(
+      messages,
+      contains('warning: no record or enum is in the namespace unused.ns'),
+    );
+    expect('warning'.allMatches(messages).length, 2, reason: messages);
     final library = File(output).readAsStringSync();
     expect(
       library,
@@ -535,15 +587,64 @@ void main() {
       );
       expect(
         await fails(1, [a, b, '-o', output]),
-        allOf(contains(b), contains('"b.X" and "a.X"'), contains(a)),
+        allOf(
+          contains(b),
+          contains('"b.X" and "a.X"'),
+          contains(a),
+          contains('add --prefix b=B'),
+        ),
+      );
+      expect(
+        await fails(1, [
+          a,
+          b,
+          '--prefix',
+          'a=P',
+          '--prefix',
+          'b=P',
+          '-o',
+          output,
+        ]),
+        allOf(contains('PX'), contains('choose other prefixes')),
+      );
+    });
+
+    test('one full name defined differently', () async {
+      final a = schema(
+        'y1.avsc',
+        '{"type": "record", "name": "a.Y", "fields": []}',
       );
       final again = schema(
-        'x3.avsc',
-        '{"type": "record", "name": "a.X", "fields": []}',
+        'y2.avsc',
+        '{"type": "record", "name": "a.Y", "fields": [{"name": "n", "type": "int"}]}',
       );
       expect(
         await fails(1, [a, again, '-o', output]),
-        allOf(contains(again), contains('already defined in $a')),
+        allOf(contains(again), contains('"a.Y" is defined differently in $a')),
+      );
+    });
+
+    test('bad prefixes exit with 2', () async {
+      for (final p in ['axt', 'axt=axt', '=Axt', 'axt=', 'a..b=A', 'axt=A-b']) {
+        expect(
+          await fails(2, ['a.avsc', '--prefix', p, '-o', output]),
+          contains('is not <namespace>=<Prefix>'),
+          reason: p,
+        );
+      }
+      expect(
+        await fails(2, ['a.avsc', '-o', output, '--prefix']),
+        contains('--prefix needs'),
+      );
+      expect(
+        await fails(2, [
+          'a.avsc',
+          '--prefix=a=A',
+          '--prefix=a=B',
+          '-o',
+          output,
+        ]),
+        contains('two prefixes'),
       );
     });
 
@@ -565,7 +666,11 @@ void main() {
       );
       expect(
         await fails(1, [file, '-o', output]),
-        allOf(contains(file), contains('DateTime'), contains('prefix')),
+        allOf(
+          contains(file),
+          contains('DateTime'),
+          contains('add --prefix axt=Axt'),
+        ),
       );
     });
   });
