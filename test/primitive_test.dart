@@ -78,7 +78,11 @@ void main() {
       });
       roundTrip('"int"', 0x7fffffff, [0xfe, 0xff, 0xff, 0xff, 0x0f]);
       roundTrip('"int"', -0x80000000, [0xff, 0xff, 0xff, 0xff, 0x0f]);
-      roundTrip('"long"', 0x7fffffffffffffff, [...List.filled(9, 0xfe), 0x01]);
+      roundTrip('"long"', 0x7fffffffffffffff, [
+        ...0xfe,
+        ...List.filled(8, 0xff),
+        0x01,
+      ]);
       roundTrip('"long"', -0x8000000000000000, [...List.filled(9, 0xff), 0x01]);
     });
 
