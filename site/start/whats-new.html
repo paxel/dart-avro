@@ -1,11 +1,69 @@
-<!-- page: title="What's new" track="start" order=4 summary="Version 0.1.1 changes nothing in the package; 0.1.0 was the first release of avro: schemas, binary and single-object encoding, schema resolution, logical types, fingerprints, container files and limits." -->
+<!-- page: title="What's new" track="start" order=4 summary="Version 0.2.0 adds code generation: dart run avro:generate writes Dart classes and enums, and TypedCodec encodes them; it also changes union resolution to Java's order and unifies the limit errors. 0.1.0 was the first release." -->
 <p class="lede">
-  0.1.1 changes nothing in the package: it is the first version that the release workflow
-  publishes to pub.dev. 0.1.0 was the first release; this page says what it contains, for a
-  reader rather than as a list of changes; the <a href="https://github.com/paxel/dart-avro/blob/summer/CHANGELOG.md">changelog</a> has the short version.
+  0.2.0 adds code generation: typed Dart classes for your schemas, and a codec for them. This page
+  says what changed for a reader rather than as a list; the
+  <a href="https://github.com/paxel/dart-avro/blob/summer/CHANGELOG.md">changelog</a> has the short
+  version.
 </p>
 
-<h2>Schemas</h2>
+<h2>Code generation</h2>
+<ul>
+  <li>
+    <code>dart run avro:generate &lt;schemas…&gt; -o &lt;file&gt;</code> writes one Dart library
+    from <code>.avsc</code> files: an immutable class for every record, with value equality,
+    <code>toString</code>, <code>copyWith</code> and an <code>avroType</code>, and a Dart
+    <code>enum</code> for every enum, each value with its Avro <code>symbol</code>.
+  </li>
+  <li>
+    A type defined in several files becomes one Dart type, and
+    <code>--prefix &lt;namespace&gt;=&lt;Prefix&gt;</code> names the types of a namespace, for
+    names such as <code>DateTime</code> that would clash with Dart's.
+  </li>
+  <li>
+    <code>TypedCodec</code> encodes and decodes those classes, with schema resolution of older
+    data and single-object encoding; its <code>avro</code> codec writes and reads container files.
+  </li>
+</ul>
+<p>The <a href="../guide/codegen.html">Code generation</a> guide shows it all.</p>
+
+<h2>Changes</h2>
+<ul>
+  <li>
+    A value read as a reader union now takes the branch that Apache Avro's Java implementation
+    takes: the same type or full name first, then a record that resolves, then a promotion. An
+    <code>int</code> read as <code>["null", "double", "int"]</code> stays an <code>int</code>.
+  </li>
+  <li>
+    Every limit of <code>AvroLimits</code> throws <code>LimitExceededException</code>, also
+    <code>maxValueDepth</code> on encode and <code>maxZeroSizeItems</code> in a container block,
+    which threw <code>EncodeException</code> and <code>DecodeException</code> before.
+  </li>
+  <li>
+    <code>AvroFileReader.records(codec)</code> rejects a codec whose writer schema is not the
+    file's, naming both fingerprints, before it decodes a record.
+  </li>
+  <li>
+    <code>DecodeException.blockOffset</code> says where the block of a failing record starts in a
+    container file.
+  </li>
+  <li>
+    A string that is not a UUID, encoded as <code>uuid</code>, fails with a message that says so.
+  </li>
+</ul>
+
+<h2>Not in this release</h2>
+<p>
+  JSON encoding, the compressions <code>snappy</code>, <code>bzip2</code>, <code>xz</code> and
+  <code>zstandard</code>, and the Avro IPC/RPC protocol. The package does not run on Flutter web.
+</p>
+
+<h2>Earlier: 0.1.1 and 0.1.0</h2>
+<p>
+  0.1.1 changed nothing in the package: it was the first version that the release workflow
+  published to pub.dev. 0.1.0 was the first release, with:
+</p>
+
+<h3>Schemas</h3>
 <ul>
   <li>
     <code>Schema.parse</code> reads any Avro 1.12 schema into an immutable tree. The tree keeps the
@@ -20,7 +78,7 @@
   </li>
 </ul>
 
-<h2>Values</h2>
+<h3>Values</h3>
 <ul>
   <li>
     <code>AvroCodec</code> encodes and decodes every primitive and complex type in Avro's binary
@@ -36,21 +94,21 @@
   <li>A union value whose branch is ambiguous is written with <code>Branch</code>.</li>
 </ul>
 
-<h2>Schema resolution</h2>
+<h3>Schema resolution</h3>
 <p>
   <code>AvroCodec(writer:, reader:)</code> reads data of one schema as another, by Avro's schema
   resolution. The resolution is worked out once, when the codec is made. Schemas that do not
   resolve throw <code>ResolutionException</code> there.
 </p>
 
-<h2>Single-object encoding</h2>
+<h3>Single-object encoding</h3>
 <p>
   <code>encodeSingleObject</code> and <code>decodeSingleObject</code> write and read a value with
   the fingerprint of its schema in front. <code>SingleObjectHeader.parse</code> reads the
   fingerprint of a message first, so that you can choose the codec before you decode.
 </p>
 
-<h2>Container files</h2>
+<h3>Container files</h3>
 <ul>
   <li>
     <code>AvroFileReader</code> reads container files compressed with <code>null</code> or
@@ -63,16 +121,9 @@
   </li>
 </ul>
 
-<h2>Limits</h2>
+<h3>Limits</h3>
 <p>
   <code>AvroLimits</code> bounds the schema size, the nesting of schemas and values, the
   decompressed size of container files and the count of zero-byte items. The defaults are finite,
   so a small input cannot expand without bound.
-</p>
-
-<h2>Not in this release</h2>
-<p>
-  JSON encoding, the compressions <code>snappy</code>, <code>bzip2</code>, <code>xz</code> and
-  <code>zstandard</code>, the Avro IPC/RPC protocol and code generation. The package does not run
-  on Flutter web.
 </p>

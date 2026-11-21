@@ -1,0 +1,416 @@
+<!-- page: title="Code generation" track="guide" order=9 summary="Generate immutable Dart classes and enums from .avsc files with dart run avro:generate: inputs, --prefix, warnings and exit codes, what each schema construct becomes, the generated members, and TypedCodec for encoding, resolution, single-object encoding and container files." -->
+<p class="lede">
+  <code>dart run avro:generate</code> turns <code>.avsc</code> files into one Dart library: an
+  immutable class for every record and a Dart <code>enum</code> for every enum. A
+  <code>TypedCodec</code> then encodes and decodes those classes with everything an
+  <code>AvroCodec</code> does: schema resolution, single-object encoding and container files.
+</p>
+
+<h2>Run the command</h2>
+<pre data-fragment><code class="language-sh">dart run avro:generate schemas/ -o lib/src/types.g.dart</code></pre>
+<ul>
+  <li>
+    <strong>Inputs</strong> are <code>.avsc</code> files and directories, in the order given. A
+    directory stands for every <code>.avsc</code> file below it, sorted by path. A file named
+    twice is read once.
+  </li>
+  <li><strong><code>-o</code></strong>, or <code>--output</code>, is the Dart file to write.</li>
+  <li>
+    <strong><code>--prefix &lt;namespace&gt;=&lt;Prefix&gt;</code></strong>, repeatable, puts
+    <code>Prefix</code> before the names of the types of exactly that namespace:
+    <code>--prefix axt=Axt</code> makes <code>axt.DateTime</code> the class
+    <code>AxtDateTime</code>. The prefix must be in UpperCamelCase.
+  </li>
+</ul>
+<p>
+  The command writes the whole library, then formats it with <code>dart format</code> where it
+  lies, so it follows the language version of your package. The output imports only
+  <code>package:avro/avro.dart</code> and, when it needs <code>Uint8List</code>,
+  <code>dart:typed_data</code>. It passes the strict analysis with no <code>ignore</code>
+  comments.
+</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Exit code</th><th>When</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>0</td>        <td>The library was written, perhaps with warnings</td></tr>
+    <tr><td>1</td>        <td>A file cannot be read or is not a valid schema, two definitions of a type differ, a name cannot be generated or clashes, or <code>dart format</code> failed</td></tr>
+    <tr><td>2</td>        <td>A wrong argument: no input, no <code>-o</code>, an unknown option or a malformed <code>--prefix</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  On a failure the message names the file, and nothing is written. A clash of names says which
+  <code>--prefix</code> would resolve it:
+</p>
+<pre data-fragment><code>avro:generate: schemas/axt/DateTime.avsc: the Dart name DateTime of "axt.DateTime" would clash with DateTime of dart:core, dart:typed_data or package:avro; add --prefix axt=Axt</code></pre>
+<p>
+  Warnings go to standard error too, and the command still succeeds: a <code>--prefix</code>
+  whose namespace has no record or enum, and a type defined in several files whose
+  documentation or attributes differ (see <a href="#inline-and-repeated-types">below</a>).
+</p>
+<p>
+  Commit the generated file and review it like any other source. When a schema changes, run the
+  command again; a test that compares the committed file with a fresh run keeps the two from
+  drifting apart.
+</p>
+
+<h2>A first class</h2>
+<p>
+  The examples on this page use one schema, <code>memo.avsc</code>, generated into
+  <code>types.g.dart</code> with <code>dart run avro:generate memo.avsc -o types.g.dart</code>:
+</p>
+<pre data-example-schema="guide/codegen-memo"><code class="language-json">{
+  "type": "record",
+  "name": "Memo",
+  "namespace": "com.example",
+  "doc": "A short note.",
+  "fields": [
+    {"name": "text", "type": "string", "doc": "What the memo says."},
+    {"name": "written_at", "type": ["null", {"type": "long", "logicalType": "timestamp-millis"}], "default": null},
+    {"name": "mood", "type": {"type": "enum", "name": "Mood", "symbols": ["CALM", "IN_A_HURRY"]}, "default": "CALM"},
+    {"name": "tags", "type": {"type": "array", "items": "string"}, "default": []},
+    {"name": "reply_to", "type": ["null", "Memo"], "default": null}
+  ]
+}</code></pre>
+<p>
+  The class is used like any immutable value. <code>TypedCodec(Memo.avroType)</code> encodes it
+  into exactly the bytes an <code>AvroCodec</code> writes for its generic value,
+  <code>Memo.avroType.toAvro(memo)</code>, and decodes them back:
+</p>
+<pre data-example="guide/codegen-first" data-generate="guide/codegen-memo"><code class="language-dart">import 'package:avro/avro.dart';
+
+import 'types.g.dart';
+
+void main() {
+  final memo = Memo(
+    text: 'Vet, Tuesday 10:00',
+    writtenAt: DateTime.utc(2025, 11, 15, 10),
+    mood: Mood.inAHurry,
+    tags: ['pets'],
+  );
+  print(memo);
+
+  final codec = TypedCodec(Memo.avroType);
+  final bytes = codec.encode(memo);
+  print('${bytes.length} bytes');
+  print(codec.decode(bytes) == memo);
+
+  // The same bytes as AvroCodec writes for the generic value.
+  final generic = Memo.avroType.toAvro(memo);
+  print(generic);
+  print(AvroCodec(writer: Memo.avroType.schema).decode(bytes));
+
+  final reply = Memo(text: 'OK', mood: Mood.calm, tags: const [], replyTo: memo);
+  print(reply.replyTo?.text);
+  print(reply.copyWith(text: 'OK, see you').text);
+  print(Mood.fromSymbol('IN_A_HURRY') == Mood.inAHurry);
+  print(Mood.calm.symbol);
+}</code></pre>
+<pre data-example-output="guide/codegen-first"><code>Memo(text: Vet, Tuesday 10:00, writtenAt: 2025-11-15 10:00:00.000Z, mood: Mood.inAHurry, tags: [pets], replyTo: null)
+35 bytes
+true
+{text: Vet, Tuesday 10:00, written_at: 2025-11-15 10:00:00.000Z, mood: IN_A_HURRY, tags: [pets], reply_to: null}
+{text: Vet, Tuesday 10:00, written_at: 2025-11-15 10:00:00.000Z, mood: IN_A_HURRY, tags: [pets], reply_to: null}
+Vet, Tuesday 10:00
+OK, see you
+true
+CALM</code></pre>
+
+<h2>What the schema becomes</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Schema</th>                                         <th>Dart</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>record</code></td>                            <td>A <code>final class</code> of the record's name</td></tr>
+    <tr><td><code>enum</code></td>                              <td>A Dart <code>enum</code>; each value has its <code>symbol</code>, and <code>fromSymbol</code> looks one up</td></tr>
+    <tr><td><code>boolean</code>, <code>int</code>, <code>long</code>, <code>float</code>, <code>double</code>, <code>string</code></td><td><code>bool</code>, <code>int</code>, <code>int</code>, <code>double</code>, <code>double</code>, <code>String</code></td></tr>
+    <tr><td><code>bytes</code>, <code>fixed</code></td>         <td><code>Uint8List</code>; a fixed gets no class</td></tr>
+    <tr><td><code>array</code>, <code>map</code></td>           <td><code>List&lt;T&gt;</code>, <code>Map&lt;String, T&gt;</code></td></tr>
+    <tr><td><code>["null", T]</code>, in either order</td>      <td><code>T?</code></td></tr>
+    <tr><td>any other union</td>                                <td><code>Object?</code>, holding the generic value</td></tr>
+    <tr><td>a logical type</td>                                 <td>Its Dart value, as in the <a href="../reference/values.html#logical-types">value mapping</a>: <code>DateTime</code>, <code>AvroDecimal</code>, …</td></tr>
+    <tr><td>a field of type <code>null</code></td>              <td>No Dart field; its value is always null</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Names</h3>
+<p>
+  A class or enum takes the simple name of its type, in UpperCamelCase, with the prefix of its
+  namespace if one is given. Fields and enum values become lowerCamelCase:
+  <code>written_at</code> is <code>writtenAt</code>, <code>IN_A_HURRY</code> is
+  <code>inAHurry</code>, <code>HTTPCode</code> is <code>httpCode</code>. A name that is a Dart
+  reserved word or a member of the generated code gets a <code>$</code> at the end:
+  <code>class</code> becomes <code>class$</code>, <code>hashCode</code> becomes
+  <code>hashCode$</code>. The map that <code>toAvro</code> returns keeps the Avro names.
+</p>
+<p>
+  The generator stops when two fields or two symbols give one Dart name, when two types give one
+  class name, and when a class name would hide a type of <code>dart:core</code>,
+  <code>dart:typed_data</code> or <code>package:avro</code>, such as <code>DateTime</code>.
+</p>
+
+<h3>Unions</h3>
+<p>
+  A union of <code>null</code> and one type is a nullable field. Any other union is an
+  <code>Object?</code> holding the generic value of its branch, as an <code>AvroCodec</code> takes
+  it: where several branches fit, a <code>Branch</code> names one. Decoding gives the plain value,
+  never a <code>Branch</code>. Lists, maps and bytes compare by their elements:
+</p>
+<pre data-example-schema="guide/codegen-reading"><code class="language-json">{
+  "type": "record",
+  "name": "Reading",
+  "fields": [
+    {"name": "value", "type": ["int", "long", "string"]},
+    {"name": "class", "type": "string"},
+    {"name": "raw", "type": "bytes"},
+    {"name": "labels", "type": {"type": "map", "values": "string"}}
+  ]
+}</code></pre>
+<pre data-example="guide/codegen-unions" data-generate="guide/codegen-reading"><code class="language-dart">import 'dart:typed_data';
+
+import 'package:avro/avro.dart';
+
+import 'types.g.dart';
+
+void main() {
+  final reading = Reading(
+    // 5 fits int and long: name the branch.
+    value: const Branch('long', 5),
+    class$: 'B',
+    raw: Uint8List.fromList([1, 2]),
+    labels: {'unit': 'kg'},
+  );
+  final codec = TypedCodec(Reading.avroType);
+  final back = codec.decode(codec.encode(reading));
+  print(back);
+  print(back.value.runtimeType);
+
+  // Lists, maps and bytes compare by their elements.
+  print(back == reading.copyWith(value: 5));
+  print(back.hashCode == reading.copyWith(value: 5).hashCode);
+}</code></pre>
+<pre data-example-output="guide/codegen-unions"><code>Reading(value: 5, class$: B, raw: [1, 2], labels: {unit: kg})
+int
+true
+true</code></pre>
+
+<h3 id="inline-and-repeated-types">Inline and repeated types</h3>
+<p>
+  A record or enum defined inside another schema gets a type of its own, like
+  <code>Mood</code> above, and a record may refer to itself, like <code>replyTo</code>. A type
+  defined in several files, which happens when each file defines the types it uses, becomes one
+  Dart type if the definitions have the same <a href="fingerprints.html">canonical form</a>. The
+  first definition in input order is used; if another one differs in its documentation or
+  attributes, the command warns and goes on:
+</p>
+<pre data-fragment><code>avro:generate: warning: "axt.DateTime" in types/b.avsc differs from types/a.avsc in its docs or attributes; the definition in types/a.avsc is used</code></pre>
+<p>Definitions with different fields stop the generator.</p>
+
+<h3>Schema text</h3>
+<p>
+  Each class carries its schema's JSON text, parsed once on first use as
+  <code>Memo.avroType.schema</code>. For a type that is the whole of an <code>.avsc</code> file,
+  it is the file's text exactly, documentation and attributes included. A type defined inside
+  another carries a JSON text of its own definition that parses on its own.
+</p>
+
+<h2>The generated members</h2>
+<p>An excerpt of what the command wrote for <code>memo.avsc</code>:</p>
+<pre data-fragment><code class="language-dart">/// A short note.
+final class Memo {
+  const Memo({
+    required this.text,
+    this.writtenAt,
+    required this.mood,
+    required this.tags,
+    this.replyTo,
+  });
+
+  /// What the memo says.
+  final String text;
+
+  final DateTime? writtenAt;
+
+  final Mood mood;
+
+  final List&lt;String&gt; tags;
+
+  final Memo? replyTo;
+
+  /// The schema of [Memo] and the conversion from and to the generic values of AvroCodec.
+  static final AvroType&lt;Memo&gt; avroType = AvroType&lt;Memo&gt;(
+    schemaJson: '''{
+  "type": "record",
+  …
+}
+''',
+    toAvro: (value) =&gt; &lt;String, Object?&gt;{
+      'text': value.text,
+      'written_at': value.writtenAt,
+      'mood': value.mood.symbol,
+      'tags': value.tags,
+      'reply_to': switch (value.replyTo) {
+        final v0? =&gt; Memo.avroType.toAvro(v0),
+        null =&gt; null,
+      },
+    },
+    fromAvro: (value) {
+      final m = value as Map&lt;String, Object?&gt;;
+      return Memo(
+        text: m['text'] as String,
+        writtenAt: m['written_at'] as DateTime?,
+        mood: Mood.fromSymbol(m['mood'] as String),
+        tags: [for (final x0 in m['tags'] as List&lt;Object?&gt;) x0 as String],
+        replyTo: switch (m['reply_to']) {
+          final v0? =&gt; Memo.avroType.fromAvro(v0),
+          null =&gt; null,
+        },
+      );
+    },
+  );
+
+  /// A copy with the given fields replaced. A null argument keeps the field,
+  /// so `copyWith` cannot set a nullable field to null.
+  Memo copyWith({
+    String? text,
+    DateTime? writtenAt,
+    Mood? mood,
+    List&lt;String&gt;? tags,
+    Memo? replyTo,
+  }) =&gt; Memo(
+    text: text ?? this.text,
+    writtenAt: writtenAt ?? this.writtenAt,
+    mood: mood ?? this.mood,
+    tags: tags ?? this.tags,
+    replyTo: replyTo ?? this.replyTo,
+  );
+
+  // … ==, hashCode and toString
+}
+
+enum Mood {
+  calm('CALM'),
+  inAHurry('IN_A_HURRY');
+
+  const Mood(this.symbol);
+
+  /// The Avro symbol of the value.
+  final String symbol;
+
+  /// The value of the Avro symbol [symbol]. Throws [ArgumentError] for any other string.
+  static Mood fromSymbol(String symbol) =&gt; switch (symbol) {
+    'CALM' =&gt; calm,
+    'IN_A_HURRY' =&gt; inAHurry,
+    _ =&gt; throw ArgumentError.value(symbol, 'symbol', 'not a symbol of Mood'),
+  };
+}</code></pre>
+<ul>
+  <li>
+    <strong>The constructor</strong> is <code>const</code>, with named parameters. Non-nullable
+    fields are <code>required</code>; nullable ones default to <code>null</code>. Avro defaults are
+    not constructor defaults: they are for schema resolution only.
+  </li>
+  <li>
+    <strong><code>==</code> and <code>hashCode</code></strong> compare every field; lists, maps,
+    bytes and <code>Object?</code> fields compare by their elements.
+  </li>
+  <li><strong><code>toString</code></strong> shows the Dart field names and their values.</li>
+  <li>
+    <strong><code>copyWith</code></strong> replaces the fields you pass. A null argument keeps the
+    field, so <code>copyWith</code> cannot set a nullable field to null; build a new value for
+    that.
+  </li>
+  <li>
+    <strong><code>avroType</code></strong> is the <code>AvroType</code> of the class: the schema
+    text, and <code>toAvro</code> and <code>fromAvro</code> between the class and the generic value
+    of <code>AvroCodec</code>.
+  </li>
+</ul>
+
+<h2>TypedCodec</h2>
+<p>
+  <code>TypedCodec(Memo.avroType)</code> encodes and decodes with the class's schema.
+  <code>TypedCodec(Memo.avroType, writer: older)</code> reads data written with another schema,
+  by <a href="resolution.html">schema resolution</a>, as <code>AvroCodec(writer:, reader:)</code>
+  does; a schema that does not resolve throws <code>ResolutionException</code> there. Encoding
+  always writes the class's own schema. <code>encodeSingleObject</code> and
+  <code>decodeSingleObject</code> are the <a href="single-object.html">single-object
+  encoding</a>, with the fingerprint of the class's schema.
+</p>
+<pre data-example="guide/codegen-resolution" data-generate="guide/codegen-memo"><code class="language-dart">import 'package:avro/avro.dart';
+
+import 'types.g.dart';
+
+void main() {
+  // An older version of the schema, without the mood and the reply.
+  final v1 = Schema.parse('''
+  {"type": "record", "name": "Memo", "namespace": "com.example", "fields": [
+    {"name": "text", "type": "string"},
+    {"name": "written_at", "type": ["null", {"type": "long", "logicalType": "timestamp-millis"}]},
+    {"name": "tags", "type": {"type": "array", "items": "string"}}
+  ]}
+  ''');
+  final old = AvroCodec(writer: v1).encode({
+    'text': 'Buy milk',
+    'written_at': null,
+    'tags': ['home'],
+  });
+
+  final codec = TypedCodec(Memo.avroType, writer: v1);
+  print(codec.decode(old));
+
+  // Encoding always writes the type's own schema, never the writer's.
+  final bytes = codec.encode(const Memo(text: 'New', mood: Mood.calm, tags: []));
+  print(TypedCodec(Memo.avroType).decode(bytes).text);
+
+  // Single-object encoding carries the fingerprint of the type's schema.
+  final message = codec.encodeSingleObject(const Memo(text: 'Hi', mood: Mood.calm, tags: []));
+  print(SingleObjectHeader.parse(message).fingerprint == Memo.avroType.schema.crc64);
+  print(TypedCodec(Memo.avroType).decodeSingleObject(message).text);
+}</code></pre>
+<pre data-example-output="guide/codegen-resolution"><code>Memo(text: Buy milk, writtenAt: null, mood: Mood.calm, tags: [home], replyTo: null)
+New
+true
+Hi</code></pre>
+<p>
+  The old data had no <code>mood</code>, so the reader schema's default, <code>CALM</code>, fills
+  it in.
+</p>
+
+<h3>Container files</h3>
+<p>
+  <code>codec.avro</code> is the underlying <code>AvroCodec</code>. Give it to
+  <code>AvroFileWriter</code> and <code>AvroFileReader.records</code>, and convert the records
+  with <code>toAvro</code> and <code>fromAvro</code>:
+</p>
+<pre data-example="guide/codegen-files" data-generate="guide/codegen-memo"><code class="language-dart">import 'package:avro/avro.dart';
+
+import 'types.g.dart';
+
+void main() {
+  final codec = TypedCodec(Memo.avroType);
+
+  final writer = AvroFileWriter(codec.avro);
+  for (final text in ['Vet', 'Milk', 'Call Anna']) {
+    writer.add(Memo.avroType.toAvro(Memo(text: text, mood: Mood.calm, tags: const [])));
+  }
+  final file = writer.close();
+
+  final reader = AvroFileReader(file);
+  final memos = reader.records(codec.avro).map(Memo.avroType.fromAvro).toList();
+  print(memos.map((m) =&gt; m.text).toList());
+  print(reader.header.schemaJson == Memo.avroType.schemaJson);
+}</code></pre>
+<pre data-example-output="guide/codegen-files"><code>[Vet, Milk, Call Anna]
+true</code></pre>
+<p>
+  A file of an older schema reads the same way with
+  <code>TypedCodec(Memo.avroType, writer: fileSchema).avro</code>, where
+  <code>fileSchema</code> is <code>Schema.parse(reader.header.schemaJson)</code>.
+</p>

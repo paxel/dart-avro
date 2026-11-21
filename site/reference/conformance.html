@@ -1,10 +1,10 @@
-<!-- page: title="Spec conformance" track="reference" order=4 summary="What of Avro 1.12 version 0.1.0 implements and what it does not, the test oracles (Apache test data, AXT examples, the Python avro interop job), what has no second implementation, the big-decimal layout, and fuzzing." -->
+<!-- page: title="Spec conformance" track="reference" order=4 summary="What of Avro 1.12 version 0.2.0 implements and what it does not, the test oracles (Apache test data, AXT examples, the Python avro interop job), what has no second implementation, the big-decimal layout, and fuzzing." -->
 <p class="lede">
   What of the <a href="https://avro.apache.org/docs/1.12.0/specification/">Avro 1.12
-  specification</a> version 0.1.0 implements, and how that is checked.
+  specification</a> version 0.2.0 implements, and how that is checked.
 </p>
 
-<h2>In 0.1.0</h2>
+<h2>In 0.2.0</h2>
 <div class="table-wrap">
 <table>
   <thead>
@@ -23,7 +23,7 @@
 </table>
 </div>
 
-<h2>Not in 0.1.0</h2>
+<h2>Not in 0.2.0</h2>
 <div class="table-wrap">
 <table>
   <thead>
@@ -33,7 +33,6 @@
     <tr><td>JSON encoding</td>                                        <td>Not available</td></tr>
     <tr><td>The compressions <code>snappy</code>, <code>bzip2</code>, <code>xz</code>, <code>zstandard</code></td><td>A file that uses one throws <code>UnsupportedCompressionException</code> when the reader is made</td></tr>
     <tr><td>The IPC/RPC protocol and protocol declarations</td>        <td>Not available; an <code>error</code> type is parsed and encoded as a record</td></tr>
-    <tr><td>Code generation of typed classes</td>                     <td>Values are <a href="values.html">generic Dart values</a></td></tr>
     <tr><td>Sort order</td>                                           <td>A field's <code>order</code> is parsed and kept, but nothing compares by it</td></tr>
   </tbody>
 </table>
