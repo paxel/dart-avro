@@ -3,6 +3,19 @@ import 'dart:io' show ZLibDecoder, ZLibEncoder;
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart'
+    show
+        ArchiveLimitException,
+        BZip2Decoder,
+        BZip2Encoder,
+        InputMemoryStream,
+        OutputMemoryStream,
+        XZDecoder,
+        XZEncoder,
+        xzDefaultMaxPreallocateSize,
+        ZstdDecoder,
+        ZstdEncoder;
+
 import 'binary.dart';
 import 'codec.dart';
 import 'exceptions.dart';
@@ -15,7 +28,14 @@ import 'snappy.dart';
 const containerMagic = [0x4f, 0x62, 0x6a, 0x01];
 
 /// The compressions this package reads and writes.
-const supportedCompressions = {'null', 'deflate', 'snappy'};
+const supportedCompressions = {
+  'null',
+  'deflate',
+  'snappy',
+  'bzip2',
+  'xz',
+  'zstandard',
+};
 
 /// The [supportedCompressions] in words, for messages.
 String get _supportedNames {
@@ -38,7 +58,8 @@ final class AvroFileHeader {
   /// The text of `avro.schema`: the writer schema as JSON.
   final String schemaJson;
 
-  /// How the blocks are compressed: `null`, `deflate` or `snappy`, the file's `avro.codec`.
+  /// How the blocks are compressed, the file's `avro.codec`:
+  /// `null`, `deflate`, `snappy`, `bzip2`, `xz` or `zstandard`.
   final String compression;
 
   /// The 16 bytes that end every block.
@@ -49,7 +70,7 @@ final class AvroFileHeader {
 ///
 /// The constructor reads the header only. Throws [DecodeException] if it is not a container
 /// file, and [UnsupportedCompressionException] if its blocks use a compression other than
-/// `null`, `deflate` and `snappy`.
+/// `null`, `deflate`, `snappy`, `bzip2`, `xz` and `zstandard`.
 final class AvroFileReader {
   AvroFileReader(Uint8List bytes, {this.limits = const AvroLimits()})
     : _bytes = bytes {
@@ -162,6 +183,7 @@ final class AvroFileReader {
       final block = switch (header.compression) {
         'deflate' => _inflate(data, total, dataStart),
         'snappy' => _unsnappy(data, total, dataStart),
+        'bzip2' || 'xz' || 'zstandard' => _unarchive(data, total, dataStart),
         _ => _checkSize(data, total),
       };
       total += block.length;
@@ -227,6 +249,78 @@ final class AvroFileReader {
         limit: 'maxTotalBytes',
       );
     }
+  }
+
+  /// `bzip2`, `xz` or `zstandard` through `archive`, with its checksums verified, stopped
+  /// as soon as the output exceeds the block limit or what is left of the total limit.
+  Uint8List _unarchive(Uint8List data, int total, int offset) {
+    final maxBlock = limits.maxBlockBytes;
+    final maxTotal = limits.maxTotalBytes;
+    final left = maxTotal == null ? null : maxTotal - total;
+    final blockBinds = maxBlock != null && (left == null || maxBlock <= left);
+    final max = blockBinds ? maxBlock : left;
+    final compression = header.compression;
+    final input = InputMemoryStream(data);
+    final output = OutputMemoryStream();
+    try {
+      final ok = switch (compression) {
+        'bzip2' => BZip2Decoder().decodeStream(
+          input,
+          output,
+          verify: true,
+          throwOnError: true,
+          maxOutputSize: max,
+        ),
+        'xz' =>
+          XZDecoder(
+            maxPreallocateSize: max == null || max > xzDefaultMaxPreallocateSize
+                ? null
+                : max,
+          ).decodeStream(
+            input,
+            output,
+            verify: true,
+            throwOnError: true,
+            maxOutputSize: max,
+          ),
+        _ => ZstdDecoder().decodeStream(
+          input,
+          output,
+          verify: true,
+          throwOnError: true,
+          maxOutputSize: max,
+        ),
+      };
+      if (!ok) {
+        throw DecodeException(
+          'the block is not valid $compression',
+          offset: offset,
+        );
+      }
+    } on ArchiveLimitException catch (e) {
+      // archive's own caps, such as a zstandard window over 128 MiB, are not ours.
+      if (max == null || !e.message.startsWith('The decoded data is larger')) {
+        throw DecodeException(
+          'the block needs more memory than the $compression decoder allows: ${e.message}',
+          offset: offset,
+        );
+      }
+      throw blockBinds
+          ? LimitExceededException(
+              'a block decompresses beyond $max bytes',
+              limit: 'maxBlockBytes',
+            )
+          : LimitExceededException(
+              'the blocks decompress beyond $maxTotal bytes',
+              limit: 'maxTotalBytes',
+            );
+    } on FormatException catch (e) {
+      throw DecodeException(
+        'the block is not valid $compression: ${e.message}',
+        offset: offset,
+      );
+    }
+    return output.getBytes();
   }
 
   /// Snappy, followed by the big-endian CRC32 of the uncompressed block. The declared
@@ -326,8 +420,9 @@ final class AvroFileWriter {
   /// `avro.schema`; a key starting with `avro.` is reserved and throws [ArgumentError].
   /// [schemaJson] is written exactly as given and defaults to the writer schema's text; it
   /// must have the writer schema's canonical form. [syncMarker] defaults to 16 random
-  /// bytes. Throws [UnsupportedCompressionException] for a [compression] other than `null`,
-  /// `deflate` and `snappy`.
+  /// bytes. Throws [UnsupportedCompressionException] for a [compression] other than
+  /// `null`, `deflate`, `snappy`, `bzip2`, `xz` and `zstandard`. `xz` blocks are stored in
+  /// the format without being compressed, as `archive` writes them.
   AvroFileWriter(
     this.codec, {
     this.compression = 'null',
@@ -390,7 +485,7 @@ final class AvroFileWriter {
   /// The codec the records are encoded with.
   final AvroCodec codec;
 
-  /// `null`, `deflate` or `snappy`.
+  /// `null`, `deflate`, `snappy`, `bzip2`, `xz` or `zstandard`.
   final String compression;
 
   /// The 16 bytes that end every block.
@@ -422,6 +517,10 @@ final class AvroFileWriter {
     final data = switch (compression) {
       'deflate' => ZLibEncoder(raw: true).convert(raw),
       'snappy' => _snappy(raw),
+      'bzip2' => BZip2Encoder().encodeBytes(raw),
+      'xz' => XZEncoder().encodeBytes(raw),
+      // With the frame's checksum, so that a damaged block cannot read as other records.
+      'zstandard' => ZstdEncoder().encodeBytes(raw, checksum: true),
       _ => raw,
     };
     _out

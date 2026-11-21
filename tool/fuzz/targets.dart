@@ -8,7 +8,7 @@ import 'dart:typed_data';
 
 import 'package:avro/avro.dart';
 
-/// Limits that keep one input cheap; a deflate or snappy bomb must stop at the block limit.
+/// Limits that keep one input cheap; a bomb in any compression must stop at the block limit.
 const fuzzLimits = AvroLimits(
   maxBlockBytes: 1024 * 1024,
   maxTotalBytes: 4 * 1024 * 1024,
@@ -133,6 +133,18 @@ List<Uint8List> fuzzSeeds(List<AvroCodec> codecs) {
     deflated.close(),
     File('test/data/apache/weather-snappy.avro').readAsBytesSync(),
     snappy.close(),
+    File('test/data/apache/weather-zstd.avro').readAsBytesSync(),
+    for (final compression in ['bzip2', 'xz', 'zstandard']) ...[
+      File('test/data/compressions/weather-$compression.avro')
+          .readAsBytesSync(),
+      (AvroFileWriter(list, compression: compression)
+            ..add({'v': 1, 'next': null})
+            ..add({
+              'v': 2,
+              'next': {'v': 3, 'next': null},
+            }))
+          .close(),
+    ],
     logical.encode(logicalValue),
     logical.encodeSingleObject(logicalValue),
     codecs[3].encode([

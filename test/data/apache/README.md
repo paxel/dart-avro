@@ -14,5 +14,5 @@ repository's notice.
 | `weather.json`        | `share/test/data/weather.json`        |
 | `syncInMeta.avro`     | `share/test/data/syncInMeta.avro`     |
 
-`weather-deflate.avro` is not in that tag; it is copied from `share/test/data/weather-deflate.avro`
-at commit `54b332161524086dcb6cde8afe097097eed7f3ee` (AVRO-4172).
+`weather-deflate.avro` and `weather-zstd.avro` are not in that tag; they are copied from
+`share/test/data/` at commit `54b332161524086dcb6cde8afe097097eed7f3ee` (AVRO-4172).

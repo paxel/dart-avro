@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - `AvroFileReader` reads and `AvroFileWriter(compression: 'snappy')` writes container files compressed with `snappy`, in pure Dart, with the CRC32 of each block checked on reading ([avro-1026](https://github.com/paxel/dart-avro/issues/30)).
+- `AvroFileReader` reads and `AvroFileWriter` writes container files compressed with `bzip2`, `xz` and `zstandard`, stopping decompression at the limits; `xz` blocks are written without being compressed ([avro-1027](https://github.com/paxel/dart-avro/issues/31)).
 
 ---
 

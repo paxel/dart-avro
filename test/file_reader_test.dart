@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart' show BZip2Encoder, XZEncoder, ZstdEncoder;
 import 'package:avro/avro.dart';
 import 'package:avro/src/snappy.dart';
 import 'package:test/test.dart';
@@ -68,13 +69,17 @@ void main() {
 
   group("Apache Avro's weather files", () {
     for (final (name, compression) in [
-      ('weather.avro', 'null'),
-      ('weather-deflate.avro', 'deflate'),
-      ('weather-snappy.avro', 'snappy'),
+      ('apache/weather.avro', 'null'),
+      ('apache/weather-deflate.avro', 'deflate'),
+      ('apache/weather-snappy.avro', 'snappy'),
+      ('apache/weather-zstd.avro', 'zstandard'),
+      ('compressions/weather-bzip2.avro', 'bzip2'),
+      ('compressions/weather-xz.avro', 'xz'),
+      ('compressions/weather-zstandard.avro', 'zstandard'),
     ]) {
       test('$name reads to weather.json', () {
         final reader = AvroFileReader(
-          File('test/data/apache/$name').readAsBytesSync(),
+          File('test/data/$name').readAsBytesSync(),
         );
         expect(reader.header.compression, compression);
         expect(Schema.parse(reader.header.schemaJson), isA<RecordSchema>());
@@ -332,9 +337,109 @@ void main() {
         );
       });
     });
+
+    for (final compression in ['bzip2', 'xz', 'zstandard']) {
+      test('a $compression block that is damaged or cut off', () {
+        final raw = AvroCodec(writer: Schema.parse('"string"'))
+            .encode('a string that the block holds, twice: ' * 2);
+        final block = switch (compression) {
+          'bzip2' => BZip2Encoder().encodeBytes(raw),
+          'xz' => XZEncoder().encodeBytes(raw),
+          _ => ZstdEncoder().encodeBytes(raw, checksum: true),
+        };
+        expect(
+          AvroFileReader(
+            file(
+              schema: '"string"',
+              compression: compression,
+              blocks: [(1, block)],
+            ),
+          ).records().single,
+          startsWith('a string'),
+        );
+        final damaged = Uint8List.fromList(block)..[block.length ~/ 2] ^= 0x55;
+        final cut = Uint8List.sublistView(block, 0, block.length - 5);
+        for (final data in [damaged, cut, Uint8List(0), Uint8List(7)]) {
+          expect(
+            () => AvroFileReader(
+              file(
+                schema: '"string"',
+                compression: compression,
+                blocks: [(1, data)],
+              ),
+            ).records().toList(),
+            throwsA(isA<DecodeException>()),
+            reason: '$compression ${data.length} bytes',
+          );
+        }
+      });
+    }
+
+    test('a zstandard frame whose window is larger than archive allows', () {
+      // The magic, a descriptor without content size, a window of 256 MiB and an empty last
+      // raw block.
+      final frame = [0x28, 0xb5, 0x2f, 0xfd, 0x00, 0x90, 0x01, 0x00, 0x00];
+      expect(
+        () => AvroFileReader(
+          file(
+            schema: '"null"',
+            compression: 'zstandard',
+            blocks: [(1, frame)],
+          ),
+          limits: AvroLimits.none,
+        ).records().toList(),
+        throwsA(
+          isA<DecodeException>().having(
+            (e) => e.message,
+            'message',
+            contains('more memory than the zstandard decoder allows'),
+          ),
+        ),
+      );
+    });
   });
 
   group('limits', () {
+    for (final (compression, name) in [
+      ('bzip2', 'bomb-bzip2'),
+      ('xz', 'bomb-xz'),
+      ('xz', 'bomb-xz-x86'),
+      ('xz', 'bomb-xz-sizes'),
+      ('zstandard', 'bomb-zstandard'),
+    ]) {
+      test('$name.bin stops at the limit', () {
+        final bomb = File('test/data/compressions/$name.bin').readAsBytesSync();
+        final bytes = file(
+          schema: '"null"',
+          compression: compression,
+          blocks: [(1, bomb)],
+        );
+        for (final (limits, limit) in [
+          (const AvroLimits(maxBlockBytes: 1024 * 1024), 'maxBlockBytes'),
+          (
+            const AvroLimits(maxBlockBytes: null, maxTotalBytes: 1024 * 1024),
+            'maxTotalBytes',
+          ),
+        ]) {
+          final before = ProcessInfo.maxRss;
+          final watch = Stopwatch()..start();
+          expect(
+            () => AvroFileReader(bytes, limits: limits).records().toList(),
+            throwsA(
+              isA<LimitExceededException>().having(
+                (e) => e.limit,
+                'limit',
+                limit,
+              ),
+            ),
+          );
+          // Decoding it all would take up to 200 MiB and seconds.
+          expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+          expect(ProcessInfo.maxRss - before, lessThan(64 * 1024 * 1024));
+        }
+      });
+    }
+
     test('a deflate bomb stops at the block limit', () {
       final bomb = deflate(Uint8List(16 * 1024 * 1024));
       expect(bomb.length, lessThan(64 * 1024));
@@ -395,6 +500,30 @@ void main() {
       final bytes = file(
         schema: '{"type": "fixed", "name": "F", "size": 1000}',
         compression: 'snappy',
+        blocks: [(1, block), (1, block), (1, block)],
+      );
+      final it = AvroFileReader(
+        bytes,
+        limits: const AvroLimits(maxTotalBytes: 2500),
+      ).records().iterator;
+      expect(it.moveNext() && it.moveNext(), isTrue);
+      expect(
+        it.moveNext,
+        throwsA(
+          isA<LimitExceededException>().having(
+            (e) => e.limit,
+            'limit',
+            'maxTotalBytes',
+          ),
+        ),
+      );
+    });
+
+    test('zstandard blocks count towards the total limit', () {
+      final block = ZstdEncoder().encodeBytes(Uint8List(1000), checksum: true);
+      final bytes = file(
+        schema: '{"type": "fixed", "name": "F", "size": 1000}',
+        compression: 'zstandard',
         blocks: [(1, block), (1, block), (1, block)],
       );
       final it = AvroFileReader(

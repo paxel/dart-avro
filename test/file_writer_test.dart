@@ -57,7 +57,14 @@ void main() {
       for (var i = 0; i < 1000; i++) {'n': i, 's': 'record $i'},
     ];
 
-    for (final compression in ['null', 'deflate', 'snappy']) {
+    for (final compression in [
+      'null',
+      'deflate',
+      'snappy',
+      'bzip2',
+      'xz',
+      'zstandard',
+    ]) {
       test('with $compression, in several blocks', () {
         final writer = AvroFileWriter(
           codec,
@@ -80,6 +87,25 @@ void main() {
       )..add(Uint8List.fromList(List.generate(200000, (i) => i % 251)));
       final records = AvroFileReader(bytes.close()).records().toList();
       expect(records.single, List.generate(200000, (i) => i % 251));
+    });
+
+    test('blocks of records that take no bytes, in every compression', () {
+      final nulls = AvroCodec(writer: Schema.parse('"null"'));
+      for (final compression in [
+        'deflate',
+        'snappy',
+        'bzip2',
+        'xz',
+        'zstandard',
+      ]) {
+        final writer = AvroFileWriter(nulls, compression: compression)
+          ..add(null)
+          ..add(null);
+        expect(AvroFileReader(writer.close()).records().toList(), [
+          null,
+          null,
+        ], reason: compression);
+      }
     });
 
     test('flush ends a block, and an empty file has no block', () {
