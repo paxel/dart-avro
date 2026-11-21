@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:avro/avro.dart';
+import 'package:avro/src/snappy.dart';
 import 'package:test/test.dart';
 
 Uint8List hexFile(String path) {
@@ -51,6 +52,14 @@ Uint8List file({
 Uint8List deflate(List<int> data) =>
     Uint8List.fromList(ZLibEncoder(raw: true).convert(data));
 
+/// [data] compressed with Snappy, then its big-endian CRC32, or [crc] instead.
+Uint8List snappy(List<int> data, {int? crc}) {
+  final compressed = snappyCompress(Uint8List.fromList(data));
+  return Uint8List(compressed.length + 4)
+    ..setAll(0, compressed)
+    ..buffer.asByteData().setUint32(compressed.length, crc ?? crc32(data));
+}
+
 void main() {
   final weather = [
     for (final line in File('test/data/apache/weather.json').readAsLinesSync())
@@ -58,15 +67,16 @@ void main() {
   ];
 
   group("Apache Avro's weather files", () {
-    for (final name in ['weather.avro', 'weather-deflate.avro']) {
+    for (final (name, compression) in [
+      ('weather.avro', 'null'),
+      ('weather-deflate.avro', 'deflate'),
+      ('weather-snappy.avro', 'snappy'),
+    ]) {
       test('$name reads to weather.json', () {
         final reader = AvroFileReader(
           File('test/data/apache/$name').readAsBytesSync(),
         );
-        expect(
-          reader.header.compression,
-          name.contains('deflate') ? 'deflate' : 'null',
-        );
+        expect(reader.header.compression, compression);
         expect(Schema.parse(reader.header.schemaJson), isA<RecordSchema>());
         expect(reader.records().toList(), weather);
       });
@@ -155,14 +165,13 @@ void main() {
       'null',
     );
     expect(
-      () => AvroFileReader(
-        file(schema: '"int"', compression: 'snappy', blocks: []),
-      ),
+      () =>
+          AvroFileReader(file(schema: '"int"', compression: 'lz4', blocks: [])),
       throwsA(
         isA<UnsupportedCompressionException>().having(
           (e) => e.compression,
           'compression',
-          'snappy',
+          'lz4',
         ),
       ),
     );
@@ -286,6 +295,43 @@ void main() {
         throwsA(isA<DecodeException>()),
       );
     });
+
+    group('a snappy block', () {
+      DecodeException? error(List<int> block) {
+        try {
+          AvroFileReader(
+            file(schema: '"int"', compression: 'snappy', blocks: [(1, block)]),
+          ).records().toList();
+        } on DecodeException catch (e) {
+          return e;
+        }
+        return null;
+      }
+
+      test('whose CRC32 does not match', () {
+        final block = snappy([2], crc: crc32([2]) ^ 1);
+        final e = error(block);
+        expect(e?.message, contains('CRC32'));
+        // The CRC32 is the last 4 bytes of the block, before the 16 of the sync marker.
+        final bytes = file(
+          schema: '"int"',
+          compression: 'snappy',
+          blocks: [(1, block)],
+        );
+        expect(e?.offset, bytes.length - 16 - 4);
+      });
+
+      test('too short for its CRC32', () {
+        expect(error([1, 0, 2])?.message, contains('too few for its CRC32'));
+      });
+
+      test('that is not Snappy', () {
+        expect(
+          error([5, 0, 2, 1, 2, 0, 0, 0, 0])?.message,
+          contains('not valid Snappy'),
+        );
+      });
+    });
   });
 
   group('limits', () {
@@ -308,6 +354,61 @@ void main() {
             (e) => e.limit,
             'limit',
             'maxBlockBytes',
+          ),
+        ),
+      );
+    });
+
+    test('a snappy block declaring more than the block limit throws before allocating', () {
+      // 4 GiB declared in 5 bytes, then a literal of 1 byte and a CRC32.
+      final bytes = file(
+        schema: '"null"',
+        compression: 'snappy',
+        blocks: [
+          (1, [0xff, 0xff, 0xff, 0xff, 0x0f, 0, 0, 0, 0, 0, 0]),
+        ],
+      );
+      for (final (limits, limit) in [
+        (const AvroLimits(), 'maxBlockBytes'),
+        (const AvroLimits(maxBlockBytes: null), 'maxTotalBytes'),
+      ]) {
+        expect(
+          () => AvroFileReader(bytes, limits: limits).records().toList(),
+          throwsA(
+            isA<LimitExceededException>().having(
+              (e) => e.limit,
+              'limit',
+              limit,
+            ),
+          ),
+        );
+      }
+      // Without limits, the input cannot hold what it declares.
+      expect(
+        () => AvroFileReader(bytes, limits: AvroLimits.none).records().toList(),
+        throwsA(isA<DecodeException>()),
+      );
+    });
+
+    test('snappy blocks count towards the total limit', () {
+      final block = snappy(Uint8List(1000));
+      final bytes = file(
+        schema: '{"type": "fixed", "name": "F", "size": 1000}',
+        compression: 'snappy',
+        blocks: [(1, block), (1, block), (1, block)],
+      );
+      final it = AvroFileReader(
+        bytes,
+        limits: const AvroLimits(maxTotalBytes: 2500),
+      ).records().iterator;
+      expect(it.moveNext() && it.moveNext(), isTrue);
+      expect(
+        it.moveNext,
+        throwsA(
+          isA<LimitExceededException>().having(
+            (e) => e.limit,
+            'limit',
+            'maxTotalBytes',
           ),
         ),
       );

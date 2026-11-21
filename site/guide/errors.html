@@ -60,13 +60,13 @@ String explain(AvroException e) =&gt; switch (e) {
   UnsupportedCompressionException(:final compression) =&gt; 'cannot read $compression files',
 };
 
-/// A container file header whose blocks claim to be compressed with snappy.
-Uint8List snappyFile() {
+/// A container file header whose blocks claim to be compressed with lz4, which Avro does not define.
+Uint8List lz4File() {
   final metadata = AvroCodec(writer: Schema.parse('{"type": "map", "values": "bytes"}'));
   return Uint8List.fromList([
     ...ascii.encode('Obj'), 1,
     ...metadata.encode({
-      'avro.codec': utf8.encode('snappy'),
+      'avro.codec': utf8.encode('lz4'),
       'avro.schema': utf8.encode('"string"'),
     }),
     ...List.filled(16, 0),
@@ -85,7 +85,7 @@ void main() {
     () =&gt; codec.decode(Uint8List.fromList([0x80])),
     () =&gt; codec.encode({'age': 'old'}),
     () =&gt; Schema.parse('"int"', limits: const AvroLimits(maxSchemaBytes: 3)),
-    () =&gt; AvroFileReader(snappyFile()),
+    () =&gt; AvroFileReader(lz4File()),
   ];
   for (final fail in failures) {
     try {
@@ -100,7 +100,7 @@ schemas do not resolve at string
 bad bytes at offset 1
 bad value at $.age
 over maxSchemaBytes
-cannot read snappy files</code></pre>
+cannot read lz4 files</code></pre>
 
 <h2>Errors that are not <code>AvroException</code></h2>
 <p>

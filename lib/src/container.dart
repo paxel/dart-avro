@@ -9,12 +9,19 @@ import 'exceptions.dart';
 import 'fingerprint.dart';
 import 'limits.dart';
 import 'schema.dart';
+import 'snappy.dart';
 
 /// The magic at the start of every object container file: `Obj` and the byte 1.
 const containerMagic = [0x4f, 0x62, 0x6a, 0x01];
 
 /// The compressions this package reads and writes.
-const supportedCompressions = {'null', 'deflate'};
+const supportedCompressions = {'null', 'deflate', 'snappy'};
+
+/// The [supportedCompressions] in words, for messages.
+String get _supportedNames {
+  final names = supportedCompressions.toList();
+  return '${names.sublist(0, names.length - 1).join(', ')} and ${names.last}';
+}
 
 /// The header of an object container file.
 final class AvroFileHeader {
@@ -31,7 +38,7 @@ final class AvroFileHeader {
   /// The text of `avro.schema`: the writer schema as JSON.
   final String schemaJson;
 
-  /// How the blocks are compressed: `null` or `deflate`, the file's `avro.codec`.
+  /// How the blocks are compressed: `null`, `deflate` or `snappy`, the file's `avro.codec`.
   final String compression;
 
   /// The 16 bytes that end every block.
@@ -42,7 +49,7 @@ final class AvroFileHeader {
 ///
 /// The constructor reads the header only. Throws [DecodeException] if it is not a container
 /// file, and [UnsupportedCompressionException] if its blocks use a compression other than
-/// `null` and `deflate`.
+/// `null`, `deflate` and `snappy`.
 final class AvroFileReader {
   AvroFileReader(Uint8List bytes, {this.limits = const AvroLimits()})
     : _bytes = bytes {
@@ -95,7 +102,7 @@ final class AvroFileReader {
     }
     if (!supportedCompressions.contains(compression)) {
       throw UnsupportedCompressionException(
-        'blocks compressed with "$compression" cannot be read; only null and deflate',
+        'blocks compressed with "$compression" cannot be read; only $_supportedNames',
         compression: compression,
       );
     }
@@ -152,9 +159,11 @@ final class AvroFileReader {
           );
         }
       }
-      final block = header.compression == 'deflate'
-          ? _inflate(data, total, dataStart)
-          : _checkSize(data, total);
+      final block = switch (header.compression) {
+        'deflate' => _inflate(data, total, dataStart),
+        'snappy' => _unsnappy(data, total, dataStart),
+        _ => _checkSize(data, total),
+      };
       total += block.length;
       final blockInput = BinaryReader(block);
       final min = minEncodedSize(c.writer);
@@ -198,18 +207,47 @@ final class AvroFileReader {
   }
 
   Uint8List _checkSize(Uint8List block, int total) {
+    _checkLength(block.length, total);
+    return block;
+  }
+
+  /// Throws if a block of [length] bytes after [total] bytes exceeds the limits.
+  void _checkLength(int length, int total) {
     final maxBlock = limits.maxBlockBytes;
-    if (maxBlock != null && block.length > maxBlock) {
+    if (maxBlock != null && length > maxBlock) {
       throw LimitExceededException(
-        'a block has ${block.length} bytes, the limit is $maxBlock',
+        'a block has $length bytes, the limit is $maxBlock',
         limit: 'maxBlockBytes',
       );
     }
     final maxTotal = limits.maxTotalBytes;
-    if (maxTotal != null && total + block.length > maxTotal) {
+    if (maxTotal != null && total + length > maxTotal) {
       throw LimitExceededException(
         'the blocks exceed $maxTotal bytes',
         limit: 'maxTotalBytes',
+      );
+    }
+  }
+
+  /// Snappy, followed by the big-endian CRC32 of the uncompressed block. The declared
+  /// length is checked against the limits before the block is allocated.
+  Uint8List _unsnappy(Uint8List data, int total, int offset) {
+    if (data.length < 4) {
+      throw DecodeException(
+        'a snappy block has ${data.length} bytes, too few for its CRC32',
+        offset: offset,
+      );
+    }
+    final crcAt = data.length - 4;
+    final block = snappyDecompress(
+      Uint8List.sublistView(data, 0, crcAt),
+      (length) => _checkLength(length, total),
+      offset,
+    );
+    if (crc32(block) != ByteData.sublistView(data, crcAt).getUint32(0)) {
+      throw DecodeException(
+        'the CRC32 after the snappy block does not match its data',
+        offset: offset + crcAt,
       );
     }
     return block;
@@ -288,8 +326,8 @@ final class AvroFileWriter {
   /// `avro.schema`; a key starting with `avro.` is reserved and throws [ArgumentError].
   /// [schemaJson] is written exactly as given and defaults to the writer schema's text; it
   /// must have the writer schema's canonical form. [syncMarker] defaults to 16 random
-  /// bytes. Throws [UnsupportedCompressionException] for a [compression] other than `null`
-  /// and `deflate`.
+  /// bytes. Throws [UnsupportedCompressionException] for a [compression] other than `null`,
+  /// `deflate` and `snappy`.
   AvroFileWriter(
     this.codec, {
     this.compression = 'null',
@@ -300,7 +338,7 @@ final class AvroFileWriter {
   }) : syncMarker = syncMarker ?? _randomSync() {
     if (!supportedCompressions.contains(compression)) {
       throw UnsupportedCompressionException(
-        'blocks cannot be compressed with "$compression"; only null and deflate',
+        'blocks cannot be compressed with "$compression"; only $_supportedNames',
         compression: compression,
       );
     }
@@ -352,7 +390,7 @@ final class AvroFileWriter {
   /// The codec the records are encoded with.
   final AvroCodec codec;
 
-  /// `null` or `deflate`.
+  /// `null`, `deflate` or `snappy`.
   final String compression;
 
   /// The 16 bytes that end every block.
@@ -381,15 +419,25 @@ final class AvroFileWriter {
     if (_closed) throw StateError('the writer is closed');
     if (_count == 0) return;
     final raw = _block.toBytes();
-    final data = compression == 'deflate'
-        ? ZLibEncoder(raw: true).convert(raw)
-        : raw;
+    final data = switch (compression) {
+      'deflate' => ZLibEncoder(raw: true).convert(raw),
+      'snappy' => _snappy(raw),
+      _ => raw,
+    };
     _out
       ..writeLong(_count)
       ..writeBytes(data)
       ..writeFixed(syncMarker);
     _block = BinaryWriter();
     _count = 0;
+  }
+
+  /// Snappy, followed by the big-endian CRC32 of [raw].
+  static Uint8List _snappy(Uint8List raw) {
+    final compressed = snappyCompress(raw);
+    final data = Uint8List(compressed.length + 4)..setAll(0, compressed);
+    ByteData.sublistView(data).setUint32(compressed.length, crc32(raw));
+    return data;
   }
 
   /// Ends the last block and returns the whole file. The writer cannot be used after.
