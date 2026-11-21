@@ -1,0 +1,459 @@
+{
+  "type": "record",
+  "name": "Person",
+  "namespace": "axt.example.v1",
+  "doc": "A person: a contact with name, birthday, phone numbers, email addresses and postal addresses.",
+  "axt.version": 1,
+  "axt.title": "display_name",
+  "axt.label": "Person",
+  "axt.label_translations": {
+    "de": "Person"
+  },
+  "axt.help": "A contact with name, birthday, phone numbers, email addresses and postal addresses.",
+  "axt.help_translations": {
+    "de": "Ein Kontakt mit Name, Geburtstag, Telefonnummern, E-Mail-Adressen und Anschriften."
+  },
+  "axt.emoji": "👤",
+  "axt.groups": {
+    "name": {
+      "label": "Name",
+      "label_translations": {
+        "de": "Name"
+      },
+      "emoji": "🪪",
+      "help": "The parts of the name.",
+      "help_translations": {
+        "de": "Die Teile des Namens."
+      }
+    }
+  },
+  "fields": [
+    {
+      "name": "display_name",
+      "type": "string",
+      "default": "",
+      "doc": "The name to show for the person, as the user wrote it, such as Dr. Anna Maria Schmidt. When empty, a receiver may build a name from the name parts.",
+      "axt.label": "Display name",
+      "axt.label_translations": {
+        "de": "Anzeigename"
+      },
+      "axt.help": "The name to show; when empty, it is built from the parts of the name.",
+      "axt.help_translations": {
+        "de": "Der angezeigte Name; wenn leer, wird er aus den Teilen des Namens gebildet."
+      },
+      "axt.emoji": "🏷️"
+    },
+    {
+      "name": "prefix",
+      "type": "string",
+      "default": "",
+      "doc": "Titles written before the name, such as Dr. Empty when there are none.",
+      "axt.label": "Prefix",
+      "axt.label_translations": {
+        "de": "Titel"
+      },
+      "axt.help": "Titles before the name, such as Dr.",
+      "axt.help_translations": {
+        "de": "Titel vor dem Namen, etwa Dr."
+      },
+      "axt.emoji": "🎓",
+      "axt.group": "name",
+      "axt.advanced": true
+    },
+    {
+      "name": "given_name",
+      "type": "string",
+      "default": "",
+      "doc": "The given name, such as Anna. Empty when not known.",
+      "axt.label": "Given name",
+      "axt.label_translations": {
+        "de": "Vorname"
+      },
+      "axt.help": "The first name, such as Anna.",
+      "axt.help_translations": {
+        "de": "Der Vorname, etwa Anna."
+      },
+      "axt.emoji": "🙂",
+      "axt.group": "name"
+    },
+    {
+      "name": "middle_name",
+      "type": "string",
+      "default": "",
+      "doc": "Further given names, such as Maria. Empty when there are none.",
+      "axt.label": "Middle names",
+      "axt.label_translations": {
+        "de": "Weitere Vornamen"
+      },
+      "axt.help": "Further given names, such as Maria.",
+      "axt.help_translations": {
+        "de": "Weitere Vornamen, etwa Maria."
+      },
+      "axt.emoji": "➕",
+      "axt.group": "name",
+      "axt.advanced": true
+    },
+    {
+      "name": "family_name",
+      "type": "string",
+      "default": "",
+      "doc": "The family name, such as Schmidt. Empty when not known.",
+      "axt.label": "Family name",
+      "axt.label_translations": {
+        "de": "Nachname"
+      },
+      "axt.help": "The family name, such as Schmidt.",
+      "axt.help_translations": {
+        "de": "Der Nachname, etwa Schmidt."
+      },
+      "axt.emoji": "👪",
+      "axt.group": "name"
+    },
+    {
+      "name": "suffix",
+      "type": "string",
+      "default": "",
+      "doc": "Additions written after the name, such as Jr. Empty when there are none.",
+      "axt.label": "Suffix",
+      "axt.label_translations": {
+        "de": "Namenszusatz"
+      },
+      "axt.help": "Additions after the name, such as Jr.",
+      "axt.help_translations": {
+        "de": "Zusätze nach dem Namen, etwa jr."
+      },
+      "axt.emoji": "🔠",
+      "axt.group": "name",
+      "axt.advanced": true
+    },
+    {
+      "name": "birthday",
+      "type": [
+        "null",
+        {
+          "type": "record",
+          "name": "Date",
+          "namespace": "axt",
+          "doc": "A calendar date of the proleptic Gregorian calendar, of which a part may be unknown, such as a birthday without a year (null, 5, 3), a year alone (2019, null, null) or a month of a year (2027, 3, null). At least one part is not null, and a day has its month. Defined in spec/time.md. Its schema never changes.",
+          "fields": [
+            {
+              "name": "year",
+              "type": [
+                "null",
+                "int"
+              ],
+              "default": null,
+              "doc": "The year, 1 to 9999. Null when the year is not known or does not matter."
+            },
+            {
+              "name": "month",
+              "type": [
+                "null",
+                "int"
+              ],
+              "default": null,
+              "doc": "The month of the year, 1 (January) to 12 (December). Null when the month is not known; then day is null as well."
+            },
+            {
+              "name": "day",
+              "type": [
+                "null",
+                "int"
+              ],
+              "default": null,
+              "doc": "The day of the month, 1 to the number of days of the month: of that year when the year is known, otherwise of a leap year, so that 29 February is valid without a year. Null when the day is not known."
+            }
+          ]
+        }
+      ],
+      "default": null,
+      "doc": "The day of birth, as far as it is known: its year is null when only the day and the month are known, as address books often hold birthdays. Null when not known.",
+      "axt.label": "Birthday",
+      "axt.label_translations": {
+        "de": "Geburtstag"
+      },
+      "axt.help": "The day of birth; the year may be left out.",
+      "axt.help_translations": {
+        "de": "Der Tag der Geburt; das Jahr kann fehlen."
+      },
+      "axt.emoji": "🎂"
+    },
+    {
+      "name": "phones",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "PersonPhone",
+          "doc": "A phone number of a person.",
+          "axt.label": "Phone number",
+          "axt.label_translations": {
+            "de": "Telefonnummer"
+          },
+          "axt.help": "A phone number and what it is for.",
+          "axt.help_translations": {
+            "de": "Eine Telefonnummer und wofür sie ist."
+          },
+          "axt.emoji": "☎️",
+          "fields": [
+            {
+              "name": "label",
+              "type": "string",
+              "default": "",
+              "doc": "What it is for, as the user wrote it, such as home, work or mobile. Empty when not given.",
+              "axt.label": "Label",
+              "axt.label_translations": {
+                "de": "Bezeichnung"
+              },
+              "axt.help": "What the number is for, such as home, work or mobile.",
+              "axt.help_translations": {
+                "de": "Wofür die Nummer ist, etwa privat, Arbeit oder mobil."
+              },
+              "axt.emoji": "🏷️"
+            },
+            {
+              "name": "number",
+              "type": "string",
+              "default": "",
+              "doc": "The phone number in the international format of ITU-T E.164: a + and 2 to 15 digits, without spaces, such as +49301234567. Empty when not given.",
+              "axt.label": "Number",
+              "axt.label_translations": {
+                "de": "Nummer"
+              },
+              "axt.help": "In international form, with + and the country code, without spaces.",
+              "axt.help_translations": {
+                "de": "In internationaler Form, mit + und Ländervorwahl, ohne Leerzeichen."
+              },
+              "axt.emoji": "📱",
+              "axt.format": "phone",
+              "axt.placeholder": "+49301234567",
+              "axt.example": "+49301234567",
+              "axt.preferred_length": 16
+            }
+          ]
+        }
+      },
+      "default": [],
+      "doc": "The person's phone numbers, in the user's order. Empty when there are none.",
+      "axt.label": "Phone numbers",
+      "axt.label_translations": {
+        "de": "Telefonnummern"
+      },
+      "axt.help": "The person's phone numbers.",
+      "axt.help_translations": {
+        "de": "Die Telefonnummern der Person."
+      },
+      "axt.emoji": "📞"
+    },
+    {
+      "name": "emails",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "PersonEmail",
+          "doc": "An email address of a person.",
+          "axt.label": "Email address",
+          "axt.label_translations": {
+            "de": "E-Mail-Adresse"
+          },
+          "axt.help": "An email address and what it is for.",
+          "axt.help_translations": {
+            "de": "Eine E-Mail-Adresse und wofür sie ist."
+          },
+          "axt.emoji": "✉️",
+          "fields": [
+            {
+              "name": "label",
+              "type": "string",
+              "default": "",
+              "doc": "What it is for, as the user wrote it, such as home or work. Empty when not given.",
+              "axt.label": "Label",
+              "axt.label_translations": {
+                "de": "Bezeichnung"
+              },
+              "axt.help": "What the address is for, such as home or work.",
+              "axt.help_translations": {
+                "de": "Wofür die Adresse ist, etwa privat oder Arbeit."
+              },
+              "axt.emoji": "🏷️"
+            },
+            {
+              "name": "address",
+              "type": "string",
+              "default": "",
+              "doc": "The email address, such as anna@example.org. Empty when not given.",
+              "axt.label": "Address",
+              "axt.label_translations": {
+                "de": "Adresse"
+              },
+              "axt.help": "The email address, such as anna@example.org.",
+              "axt.help_translations": {
+                "de": "Die E-Mail-Adresse, etwa anna@example.org."
+              },
+              "axt.emoji": "📨",
+              "axt.format": "email",
+              "axt.placeholder": "anna@example.org"
+            }
+          ]
+        }
+      },
+      "default": [],
+      "doc": "The person's email addresses, in the user's order. Empty when there are none.",
+      "axt.label": "Email addresses",
+      "axt.label_translations": {
+        "de": "E-Mail-Adressen"
+      },
+      "axt.help": "The person's email addresses.",
+      "axt.help_translations": {
+        "de": "Die E-Mail-Adressen der Person."
+      },
+      "axt.emoji": "📧"
+    },
+    {
+      "name": "addresses",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "PersonAddress",
+          "doc": "A postal address of a person. Every part is empty when not given.",
+          "axt.label": "Postal address",
+          "axt.label_translations": {
+            "de": "Anschrift"
+          },
+          "axt.help": "A postal address and what it is for.",
+          "axt.help_translations": {
+            "de": "Eine Anschrift und wofür sie ist."
+          },
+          "axt.emoji": "📮",
+          "fields": [
+            {
+              "name": "label",
+              "type": "string",
+              "default": "",
+              "doc": "What it is for, as the user wrote it, such as home or work. Empty when not given.",
+              "axt.label": "Label",
+              "axt.label_translations": {
+                "de": "Bezeichnung"
+              },
+              "axt.help": "What the address is for, such as home or work.",
+              "axt.help_translations": {
+                "de": "Wofür die Anschrift ist, etwa privat oder Arbeit."
+              },
+              "axt.emoji": "🏷️"
+            },
+            {
+              "name": "street",
+              "type": "string",
+              "default": "",
+              "doc": "The street and house number, and further lines such as a flat or a c/o, separated by LF.",
+              "axt.label": "Street",
+              "axt.label_translations": {
+                "de": "Straße"
+              },
+              "axt.help": "The street and house number, and further lines such as a flat or a c/o.",
+              "axt.help_translations": {
+                "de": "Straße und Hausnummer, dazu weitere Zeilen wie eine Wohnung oder ein c/o."
+              },
+              "axt.emoji": "🛣️",
+              "axt.multiline": true
+            },
+            {
+              "name": "postal_code",
+              "type": "string",
+              "default": "",
+              "doc": "The postal code, such as 10115.",
+              "axt.label": "Postal code",
+              "axt.label_translations": {
+                "de": "Postleitzahl"
+              },
+              "axt.help": "The postal code, such as 10115.",
+              "axt.help_translations": {
+                "de": "Die Postleitzahl, etwa 10115."
+              },
+              "axt.emoji": "🔢",
+              "axt.preferred_length": 10
+            },
+            {
+              "name": "locality",
+              "type": "string",
+              "default": "",
+              "doc": "The city, town or village.",
+              "axt.label": "City",
+              "axt.label_translations": {
+                "de": "Ort"
+              },
+              "axt.help": "The city, town or village.",
+              "axt.help_translations": {
+                "de": "Die Stadt, die Gemeinde oder das Dorf."
+              },
+              "axt.emoji": "🏙️"
+            },
+            {
+              "name": "region",
+              "type": "string",
+              "default": "",
+              "doc": "The state, province or county, where an address names one.",
+              "axt.label": "Region",
+              "axt.label_translations": {
+                "de": "Region"
+              },
+              "axt.help": "The state, province or county, where the address names one.",
+              "axt.help_translations": {
+                "de": "Das Bundesland, die Provinz oder der Bezirk, wo die Anschrift eines nennt."
+              },
+              "axt.emoji": "🗺️",
+              "axt.advanced": true
+            },
+            {
+              "name": "country",
+              "type": "string",
+              "default": "",
+              "doc": "The country, as an upper-case code of ISO 3166-1 alpha-2, such as DE.",
+              "axt.label": "Country",
+              "axt.label_translations": {
+                "de": "Land"
+              },
+              "axt.help": "The country as a code of two letters, such as DE.",
+              "axt.help_translations": {
+                "de": "Das Land als Code aus zwei Buchstaben, etwa DE."
+              },
+              "axt.emoji": "🌍",
+              "axt.format": "country",
+              "axt.placeholder": "DE",
+              "axt.preferred_length": 2
+            }
+          ]
+        }
+      },
+      "default": [],
+      "doc": "The person's postal addresses, in the user's order. Empty when there are none.",
+      "axt.label": "Postal addresses",
+      "axt.label_translations": {
+        "de": "Anschriften"
+      },
+      "axt.help": "The person's postal addresses.",
+      "axt.help_translations": {
+        "de": "Die Anschriften der Person."
+      },
+      "axt.emoji": "🏠"
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "default": "",
+      "doc": "Free notes on the person, as plain text; lines are separated by LF. Empty when there are none.",
+      "axt.label": "Notes",
+      "axt.label_translations": {
+        "de": "Notizen"
+      },
+      "axt.help": "Anything else about the person.",
+      "axt.help_translations": {
+        "de": "Alles Weitere zur Person."
+      },
+      "axt.emoji": "📝",
+      "axt.multiline": true
+    }
+  ]
+}

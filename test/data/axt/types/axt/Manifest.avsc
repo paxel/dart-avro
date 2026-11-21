@@ -1,0 +1,199 @@
+{
+  "type": "record",
+  "name": "Manifest",
+  "namespace": "axt",
+  "doc": "The types an app takes and what it does with them; the body of a MANIFEST message. Defined in spec/manifest.md. Its schema changes only with a new envelope format.",
+  "fields": [
+    {
+      "name": "revision",
+      "type": "long",
+      "doc": "The revision of this manifest, at least 1. It rises with every change of the manifest's content, so that a receiver can tell the latest of several manifests of the same app apart from older ones."
+    },
+    {
+      "name": "app_name",
+      "type": "string",
+      "doc": "The name the app gives itself, as plain text on one line, such as Old Brain Fix. It is shown to the other app's user; it does not identify the app, the keys of its sender do, of which the sender key of the envelope is one."
+    },
+    {
+      "name": "app_url",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null,
+      "doc": "An absolute https URL of a page about the app. Null when the app names none."
+    },
+    {
+      "name": "formats",
+      "type": {
+        "type": "array",
+        "items": "int"
+      },
+      "doc": "The envelope formats the app reads, each at least 1, without duplicates. It includes the format of the envelope that carries this manifest."
+    },
+    {
+      "name": "takes",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "ManifestTake",
+          "doc": "One type the app takes, the versions of it it takes, and what it does with its records.",
+          "fields": [
+            {
+              "name": "type",
+              "type": "string",
+              "doc": "The full name of the type, namespace and name, such as axt.example.v1.Appointment. Matched exactly; the major version is part of the name."
+            },
+            {
+              "name": "min_version",
+              "type": "int",
+              "doc": "The lowest version of the type the app takes, as the type's axt.version attribute numbers it; at least 1. A schema without a valid axt.version counts as version 1."
+            },
+            {
+              "name": "max_version",
+              "type": [
+                "null",
+                "int"
+              ],
+              "default": null,
+              "doc": "The highest version of the type the app takes, at least min_version. Null when the app takes every version from min_version on."
+            },
+            {
+              "name": "purpose",
+              "type": "string",
+              "doc": "One sentence in English, plain text on one line, on what the app does with records of the type, such as: An Appointment becomes a Reminder."
+            },
+            {
+              "name": "purpose_translations",
+              "type": {
+                "type": "map",
+                "values": "string"
+              },
+              "default": {},
+              "doc": "The sentence of the field purpose in other languages. Each key is a BCP 47 language tag other than en, such as de or pt-BR; each value is the sentence in that language, plain text on one line. Empty when there are none."
+            }
+          ]
+        }
+      },
+      "default": [],
+      "doc": "The types the app takes, each full name at most once. Empty when the app takes no type by name."
+    },
+    {
+      "name": "any_type",
+      "type": [
+        "null",
+        {
+          "type": "record",
+          "name": "ManifestAnyType",
+          "doc": "That the app takes every type that takes does not name, in every version, and what it does with their records.",
+          "fields": [
+            {
+              "name": "purpose",
+              "type": "string",
+              "doc": "One sentence in English, plain text on one line, on what the app does with records of a type that takes does not name, such as: Any other type becomes a searchable Note."
+            },
+            {
+              "name": "purpose_translations",
+              "type": {
+                "type": "map",
+                "values": "string"
+              },
+              "default": {},
+              "doc": "The sentence of the field purpose in other languages, keyed by BCP 47 language tag other than en, as in ManifestTake. Empty when there are none."
+            }
+          ]
+        }
+      ],
+      "default": null,
+      "doc": "Whether the app takes every type that takes does not name. Null when it takes only the types in takes."
+    },
+    {
+      "name": "sends",
+      "type": [
+        "null",
+        {
+          "type": "array",
+          "items": {
+            "type": "record",
+            "name": "ManifestSend",
+            "doc": "One type the app may send, the versions of it it writes, and whether it takes proposals for its records of the type.",
+            "fields": [
+              {
+                "name": "type",
+                "type": "string",
+                "doc": "The full name of the type, namespace and name, such as axt.example.v1.Pet."
+              },
+              {
+                "name": "min_version",
+                "type": "int",
+                "doc": "The lowest version of the type the app writes, as the type's axt.version attribute numbers it; at least 1. A schema without a valid axt.version counts as version 1."
+              },
+              {
+                "name": "max_version",
+                "type": [
+                  "null",
+                  "int"
+                ],
+                "default": null,
+                "doc": "The highest version of the type the app writes, at least min_version. Null when the app does not say."
+              },
+              {
+                "name": "proposals",
+                "type": "boolean",
+                "default": false,
+                "doc": "Whether the app takes proposals of changes to the records of this type it sends, as PROPOSAL messages. False when it takes none."
+              }
+            ]
+          }
+        }
+      ],
+      "default": null,
+      "doc": "The types the app may send, each full name at most once; for display only. Null when the app does not say; empty when it sends no type."
+    },
+    {
+      "name": "encryption_key",
+      "type": [
+        "null",
+        {
+          "type": "fixed",
+          "name": "ManifestEncryptionKey",
+          "size": 32,
+          "doc": "An X25519 public key in the encoding of RFC 7748. Defined in spec/keys.md."
+        }
+      ],
+      "default": null,
+      "doc": "The X25519 public key of this installation with which other apps encrypt messages to it through a relay, as spec/keys.md defines. Null when the app takes no messages through a relay."
+    },
+    {
+      "name": "relay",
+      "type": [
+        "null",
+        {
+          "type": "record",
+          "name": "ManifestRelay",
+          "doc": "The relay and the mailbox at it into which other apps put messages for this installation. Defined in spec/transports.md.",
+          "fields": [
+            {
+              "name": "url",
+              "type": "string",
+              "doc": "The base URL of the relay: an absolute https URL with a host, ending with a slash, without user information, query or fragment, at most 256 bytes, such as https://relay.example.org/axt/. The paths of the relay's interface are appended to it."
+            },
+            {
+              "name": "mailbox",
+              "type": {
+                "type": "fixed",
+                "name": "ManifestRelayMailbox",
+                "size": 32,
+                "doc": "A mailbox id: the SHA-256 of a fixed prefix and the mailbox secret that only the mailbox's owner holds. Defined in spec/transports.md."
+              },
+              "doc": "The id of the mailbox at the relay into which other apps put messages for this installation."
+            }
+          ]
+        }
+      ],
+      "default": null,
+      "doc": "Where other apps put messages for this installation through a relay. Null when the app takes no messages through a relay; it is present exactly when encryption_key is."
+    }
+  ]
+}

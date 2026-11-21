@@ -1,0 +1,223 @@
+{
+  "type": "record",
+  "name": "Appointment",
+  "namespace": "axt.example.v1",
+  "doc": "An appointment: an event at a time and possibly a place, such as a visit to the vet.",
+  "axt.version": 1,
+  "axt.title": "title",
+  "axt.label": "Appointment",
+  "axt.label_translations": {
+    "de": "Termin"
+  },
+  "axt.help": "An event at a time and possibly a place, such as a visit to the vet.",
+  "axt.help_translations": {
+    "de": "Ein Ereignis zu einer Zeit und vielleicht an einem Ort, etwa ein Besuch beim Tierarzt."
+  },
+  "axt.emoji": "📆",
+  "fields": [
+    {
+      "name": "title",
+      "type": "string",
+      "default": "",
+      "doc": "What the appointment is, as plain text on one line.",
+      "axt.label": "Title",
+      "axt.label_translations": {
+        "de": "Titel"
+      },
+      "axt.help": "What the appointment is, on one line.",
+      "axt.help_translations": {
+        "de": "Worum es beim Termin geht, in einer Zeile."
+      },
+      "axt.emoji": "🏷️"
+    },
+    {
+      "name": "start",
+      "type": {
+        "type": "record",
+        "name": "DateTime",
+        "namespace": "axt",
+        "doc": "A date and time on the wall clock, to the millisecond, either in a time zone of the IANA time zone database, with the offset from UTC and the instant as the writer's zone rules gave them, or floating, on the wall clock of wherever the user is, without zone, offset and instant. Defined in spec/time.md. Its schema never changes.",
+        "fields": [
+          {
+            "name": "year",
+            "type": "int",
+            "doc": "The year of the proleptic Gregorian calendar, 1 to 9999."
+          },
+          {
+            "name": "month",
+            "type": "int",
+            "doc": "The month, 1 (January) to 12 (December)."
+          },
+          {
+            "name": "day",
+            "type": "int",
+            "doc": "The day of the month, 1 to the number of days of that month in that year."
+          },
+          {
+            "name": "hour",
+            "type": "int",
+            "doc": "The hour on the wall clock, 0 to 23."
+          },
+          {
+            "name": "minute",
+            "type": "int",
+            "doc": "The minute, 0 to 59."
+          },
+          {
+            "name": "second",
+            "type": "int",
+            "doc": "The second, 0 to 59; a leap second is not written as 60."
+          },
+          {
+            "name": "millisecond",
+            "type": "int",
+            "doc": "The millisecond, 0 to 999."
+          },
+          {
+            "name": "zone",
+            "type": [
+              "null",
+              "string"
+            ],
+            "default": null,
+            "doc": "The name of the time zone in the IANA time zone database, such as Europe/Berlin. Null for a floating time; then offset_seconds and instant_ms are null as well."
+          },
+          {
+            "name": "offset_seconds",
+            "type": [
+              "null",
+              "int"
+            ],
+            "default": null,
+            "doc": "The offset of the wall clock from UTC, in seconds, -64800 to 64800, as the writer's rules of the zone gave it at the instant, such as 3600 for 01:00 east of UTC. Null for a floating time, and only then."
+          },
+          {
+            "name": "instant_ms",
+            "type": [
+              "null",
+              "long"
+            ],
+            "default": null,
+            "doc": "The instant, in milliseconds since 1970-01-01T00:00:00Z without leap seconds: the wall clock read as if it were UTC, minus offset_seconds. Null for a floating time, and only then."
+          }
+        ]
+      },
+      "doc": "When the appointment starts, as a date and time on the wall clock, in a time zone or floating. For an all-day appointment, 00:00 of its first day, floating.",
+      "axt.label": "Start",
+      "axt.label_translations": {
+        "de": "Beginn"
+      },
+      "axt.help": "When the appointment starts.",
+      "axt.help_translations": {
+        "de": "Wann der Termin beginnt."
+      },
+      "axt.emoji": "🕘",
+      "axt.anchor": "local"
+    },
+    {
+      "name": "end",
+      "type": [
+        "null",
+        "axt.DateTime"
+      ],
+      "default": null,
+      "doc": "When the appointment ends: the first moment after it, which is not part of it. It is in a time zone when start is, possibly another one, as for a flight, and floating when start is floating. For an all-day appointment, 00:00 of the day after its last day, floating. Null when no end is given; an all-day appointment without an end takes one day.",
+      "axt.label": "End",
+      "axt.label_translations": {
+        "de": "Ende"
+      },
+      "axt.help": "When the appointment is over.",
+      "axt.help_translations": {
+        "de": "Wann der Termin vorbei ist."
+      },
+      "axt.emoji": "🔚",
+      "axt.anchor": "local"
+    },
+    {
+      "name": "all_day",
+      "type": "boolean",
+      "default": false,
+      "doc": "True when the appointment takes whole days; start and end are then floating at 00:00, and only their days count.",
+      "axt.label": "All day",
+      "axt.label_translations": {
+        "de": "Ganztägig"
+      },
+      "axt.help": "On when the appointment takes whole days.",
+      "axt.help_translations": {
+        "de": "An, wenn der Termin ganze Tage dauert."
+      },
+      "axt.emoji": "☀️"
+    },
+    {
+      "name": "location",
+      "type": "string",
+      "default": "",
+      "doc": "Where the appointment takes place, as text, such as an address or a room. Empty when not given.",
+      "axt.label": "Location",
+      "axt.label_translations": {
+        "de": "Ort"
+      },
+      "axt.help": "Where the appointment takes place, such as an address or a room.",
+      "axt.help_translations": {
+        "de": "Wo der Termin stattfindet, etwa eine Anschrift oder ein Raum."
+      },
+      "axt.emoji": "📍"
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "default": "",
+      "doc": "Free notes on the appointment, as plain text; lines are separated by LF. Empty when there are none.",
+      "axt.label": "Notes",
+      "axt.label_translations": {
+        "de": "Notizen"
+      },
+      "axt.help": "Anything else about the appointment.",
+      "axt.help_translations": {
+        "de": "Alles Weitere zum Termin."
+      },
+      "axt.emoji": "📝",
+      "axt.multiline": true
+    },
+    {
+      "name": "reminders",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "Duration",
+          "namespace": "axt",
+          "doc": "A length of time in three parts that are not converted into each other: calendar months, calendar days and elapsed milliseconds, as an INTERVAL of SQL. P1M2DT3H is 1 month, 2 days and 10800000 milliseconds; -PT15M is -900000 milliseconds. The parts that are not 0 all have the same sign. Added to a date and time, the months come first, then the days, then the milliseconds. Defined in spec/time.md. Its schema never changes.",
+          "fields": [
+            {
+              "name": "months",
+              "type": "int",
+              "doc": "The number of calendar months, negative for a length back in time. A year is 12 months."
+            },
+            {
+              "name": "days",
+              "type": "int",
+              "doc": "The number of calendar days, negative for a length back in time. A day on the wall clock, which may last 23 or 25 hours where the offset changes; a week is 7 days."
+            },
+            {
+              "name": "millis",
+              "type": "long",
+              "doc": "The number of elapsed milliseconds, negative for a length back in time. Hours, minutes and seconds are carried here: an hour is 3600000 milliseconds, and 24 hours are not converted into a day."
+            }
+          ]
+        }
+      },
+      "default": [],
+      "doc": "When the user wants to be reminded, each as a duration added to start as spec/time.md, section 7.2, says: negative before start, such as -PT15M for 15 minutes before or -P1D for the day before at the same time on the wall clock, 0 at start, and positive after it. Empty when there are no reminders.",
+      "axt.label": "Reminders",
+      "axt.label_translations": {
+        "de": "Erinnerungen"
+      },
+      "axt.help": "When to be reminded, each before or after the start.",
+      "axt.help_translations": {
+        "de": "Wann erinnert werden soll, jeweils vor oder nach dem Beginn."
+      },
+      "axt.emoji": "⏰"
+    }
+  ]
+}

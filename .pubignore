@@ -31,3 +31,8 @@ tool/
 tsconfig.json
 test/fuzz_test.dart
 test/site_examples_test.dart
+# The AXT acceptance case of the generator: the vendored types, the library generated from
+# them and its test, which needs both.
+test/axt_types_test.dart
+test/data/axt/types/
+test/data/axt/axt_types.g.dart

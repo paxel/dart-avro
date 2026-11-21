@@ -1,0 +1,18 @@
+{
+  "type": "record",
+  "name": "Withdraw",
+  "namespace": "axt",
+  "doc": "The body of a WITHDRAW message: the sender no longer shares one record with the receiver it sends this message to. Defined in spec/shares.md. The envelope's record field names the record and carries the version of the withdrawal, which no DATA or DELETE of the record carries. The receiver removes its copy, or keeps it if its user changed it. Its schema changes only with a new envelope format.",
+  "fields": [
+    {
+      "name": "to",
+      "type": {
+        "type": "fixed",
+        "name": "WithdrawTo",
+        "size": 32,
+        "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+      },
+      "doc": "The Ed25519 public key of the receiver's device that the withdrawal is sent to. A device that gets it directly ignores a WITHDRAW that names another key; a forwarded one is rejected unless this is a current or a removed key of the device's own set, and one read from a file is applied only if it is."
+    }
+  ]
+}

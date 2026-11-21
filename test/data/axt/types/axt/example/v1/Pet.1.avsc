@@ -1,0 +1,215 @@
+{
+  "type": "record",
+  "name": "Pet",
+  "namespace": "axt.example.v1",
+  "doc": "A pet: an animal the user keeps, such as a cat or a dog.",
+  "axt.version": 1,
+  "axt.title": "name",
+  "axt.label": "Pet",
+  "axt.label_translations": {
+    "de": "Haustier"
+  },
+  "axt.help": "An animal that is kept, such as a cat or a dog.",
+  "axt.help_translations": {
+    "de": "Ein Tier, das gehalten wird, etwa eine Katze oder ein Hund."
+  },
+  "axt.emoji": "🐾",
+  "fields": [
+    {
+      "name": "name",
+      "type": "string",
+      "default": "",
+      "doc": "The pet's name. Empty when it has none.",
+      "axt.label": "Name",
+      "axt.label_translations": {
+        "de": "Name"
+      },
+      "axt.help": "The pet's name.",
+      "axt.help_translations": {
+        "de": "Der Name des Tiers."
+      },
+      "axt.emoji": "🏷️"
+    },
+    {
+      "name": "species",
+      "type": "string",
+      "default": "",
+      "doc": "The kind of animal, as the user wrote it, such as cat or dog. Empty when not given.",
+      "axt.label": "Species",
+      "axt.label_translations": {
+        "de": "Tierart"
+      },
+      "axt.help": "The kind of animal, such as cat or dog.",
+      "axt.help_translations": {
+        "de": "Die Tierart, etwa Katze oder Hund."
+      },
+      "axt.emoji": "🐈"
+    },
+    {
+      "name": "breed",
+      "type": "string",
+      "default": "",
+      "doc": "The breed, as the user wrote it, such as Maine Coon. Empty when not known.",
+      "axt.label": "Breed",
+      "axt.label_translations": {
+        "de": "Rasse"
+      },
+      "axt.help": "The breed, such as Maine Coon.",
+      "axt.help_translations": {
+        "de": "Die Rasse, etwa Maine Coon."
+      },
+      "axt.emoji": "🧬"
+    },
+    {
+      "name": "sex",
+      "type": {
+        "type": "enum",
+        "name": "PetSex",
+        "doc": "The sex of an animal. FEMALE, MALE: female and male. UNKNOWN: not known or not given; a symbol this version does not know is read as UNKNOWN.",
+        "symbols": [
+          "UNKNOWN",
+          "FEMALE",
+          "MALE"
+        ],
+        "default": "UNKNOWN",
+        "axt.symbols": {
+          "UNKNOWN": {
+            "label": "Unknown",
+            "label_translations": {
+              "de": "Unbekannt"
+            },
+            "emoji": "❔"
+          },
+          "FEMALE": {
+            "label": "Female",
+            "label_translations": {
+              "de": "Weiblich"
+            },
+            "emoji": "♀️"
+          },
+          "MALE": {
+            "label": "Male",
+            "label_translations": {
+              "de": "Männlich"
+            },
+            "emoji": "♂️"
+          }
+        }
+      },
+      "default": "UNKNOWN",
+      "doc": "The pet's sex.",
+      "axt.label": "Sex",
+      "axt.label_translations": {
+        "de": "Geschlecht"
+      },
+      "axt.help": "The pet's sex.",
+      "axt.help_translations": {
+        "de": "Das Geschlecht des Tiers."
+      },
+      "axt.emoji": "⚧️"
+    },
+    {
+      "name": "neutered",
+      "type": [
+        "null",
+        "boolean"
+      ],
+      "default": null,
+      "doc": "True when the pet is neutered or spayed, false when it is not. Null when not known.",
+      "axt.label": "Neutered",
+      "axt.label_translations": {
+        "de": "Kastriert"
+      },
+      "axt.help": "Whether the pet is neutered or spayed.",
+      "axt.help_translations": {
+        "de": "Ob das Tier kastriert ist."
+      },
+      "axt.emoji": "✂️"
+    },
+    {
+      "name": "birthday",
+      "type": [
+        "null",
+        {
+          "type": "record",
+          "name": "Date",
+          "namespace": "axt",
+          "doc": "A calendar date of the proleptic Gregorian calendar, of which a part may be unknown, such as a birthday without a year (null, 5, 3), a year alone (2019, null, null) or a month of a year (2027, 3, null). At least one part is not null, and a day has its month. Defined in spec/time.md. Its schema never changes.",
+          "fields": [
+            {
+              "name": "year",
+              "type": [
+                "null",
+                "int"
+              ],
+              "default": null,
+              "doc": "The year, 1 to 9999. Null when the year is not known or does not matter."
+            },
+            {
+              "name": "month",
+              "type": [
+                "null",
+                "int"
+              ],
+              "default": null,
+              "doc": "The month of the year, 1 (January) to 12 (December). Null when the month is not known; then day is null as well."
+            },
+            {
+              "name": "day",
+              "type": [
+                "null",
+                "int"
+              ],
+              "default": null,
+              "doc": "The day of the month, 1 to the number of days of the month: of that year when the year is known, otherwise of a leap year, so that 29 February is valid without a year. Null when the day is not known."
+            }
+          ]
+        }
+      ],
+      "default": null,
+      "doc": "The pet's day of birth, as far as it is known, such as the year alone for an animal from a shelter. Null when not known.",
+      "axt.label": "Birthday",
+      "axt.label_translations": {
+        "de": "Geburtstag"
+      },
+      "axt.help": "The day of birth, or only its month or year when that is all that is known.",
+      "axt.help_translations": {
+        "de": "Der Tag der Geburt, oder nur Monat oder Jahr, wenn nur das bekannt ist."
+      },
+      "axt.emoji": "🎂"
+    },
+    {
+      "name": "microchip",
+      "type": "string",
+      "default": "",
+      "doc": "The number of the pet's microchip, as read from it; 15 digits for a chip of ISO 11784. Empty when it has none or it is not known.",
+      "axt.label": "Microchip",
+      "axt.label_translations": {
+        "de": "Mikrochip"
+      },
+      "axt.help": "The number read from the pet's microchip.",
+      "axt.help_translations": {
+        "de": "Die Nummer, die vom Mikrochip des Tiers gelesen wird."
+      },
+      "axt.emoji": "📟",
+      "axt.preferred_length": 15,
+      "axt.advanced": true
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "default": "",
+      "doc": "Free notes on the pet, as plain text; lines are separated by LF. Empty when there are none.",
+      "axt.label": "Notes",
+      "axt.label_translations": {
+        "de": "Notizen"
+      },
+      "axt.help": "Anything else about the pet.",
+      "axt.help_translations": {
+        "de": "Alles Weitere zum Tier."
+      },
+      "axt.emoji": "📝",
+      "axt.multiline": true
+    }
+  ]
+}

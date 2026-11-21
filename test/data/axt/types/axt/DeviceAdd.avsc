@@ -1,0 +1,28 @@
+{
+  "type": "record",
+  "name": "DeviceAdd",
+  "namespace": "axt",
+  "doc": "The body of a DEVICE_ADD message: a device adds the key of a new device to the devices of its sender. Defined in spec/keys.md, section 5.2. The message is signed with the key of a device that is already one of the sender's, which is its sender. Its schema changes only with a new envelope format.",
+  "fields": [
+    {
+      "name": "device",
+      "type": {
+        "type": "fixed",
+        "name": "DeviceAddDevice",
+        "size": 32,
+        "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+      },
+      "doc": "The Ed25519 public key of the new device, which from then on signs messages of the same sender."
+    },
+    {
+      "name": "proof",
+      "type": {
+        "type": "fixed",
+        "name": "DeviceAddProof",
+        "size": 64,
+        "doc": "An Ed25519 signature. Defined in spec/keys.md."
+      },
+      "doc": "The signature of the new device's key over the key of the message's sender and the new device's key, as spec/keys.md, section 5.2, defines; it shows that the new device holds its key and joins this sender."
+    }
+  ]
+}
