@@ -14,7 +14,7 @@ final class Memo {
     schemaJson:
         '{"type": "record", "name": "Memo", "namespace": "com.example", "doc": "A memo.", '
         '"fields": [{"name": "text", "type": "string"}, '
-        '{"name": "written", "type": ["null", {"type": "long", "logicalType": "timestamp-millis"}]}]}',
+        '{"name": "written", "type": ["null", {"type": "long", "logicalType": "timestamp-millis"}], "default": null}]}',
     toAvro: (m) => {'text': m.text, 'written': m.written},
     fromAvro: (v) {
       final m = v! as Map<String, Object?>;
