@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   gate:
-    uses: paxel/gates/.github/workflows/release-gate.yml@ccb900ba534004ed8bb410f1f48c4097d9a9f530 # v1.3.0
+    uses: paxel/gates/.github/workflows/release-gate.yml@385f7ac316aef261a56e46bfc1e3553fa2efaccd # v1.4.0
     permissions:
       contents: read
       security-events: read

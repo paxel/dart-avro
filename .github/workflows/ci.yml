@@ -19,10 +19,10 @@ permissions:
 
 jobs:
   vulns:
-    uses: paxel/gates/.github/workflows/vulns.yml@ccb900ba534004ed8bb410f1f48c4097d9a9f530 # v1.3.0
+    uses: paxel/gates/.github/workflows/vulns.yml@385f7ac316aef261a56e46bfc1e3553fa2efaccd # v1.4.0
 
   dart:
-    uses: paxel/gates/.github/workflows/dart.yml@ccb900ba534004ed8bb410f1f48c4097d9a9f530 # v1.3.0
+    uses: paxel/gates/.github/workflows/dart.yml@385f7ac316aef261a56e46bfc1e3553fa2efaccd # v1.4.0
     with:
       packages: |
         dart .
@@ -45,12 +45,12 @@ jobs:
   # The part is named site: the gate's tests are the site tests, which measure the site build
   # in scripts/.
   ts:
-    uses: paxel/gates/.github/workflows/ts.yml@ccb900ba534004ed8bb410f1f48c4097d9a9f530 # v1.3.0
+    uses: paxel/gates/.github/workflows/ts.yml@385f7ac316aef261a56e46bfc1e3553fa2efaccd # v1.4.0
     with:
       packages: site .
 
   sonar:
     needs: [dart, ts]
-    uses: paxel/gates/.github/workflows/sonar.yml@ccb900ba534004ed8bb410f1f48c4097d9a9f530 # v1.3.0
+    uses: paxel/gates/.github/workflows/sonar.yml@385f7ac316aef261a56e46bfc1e3553fa2efaccd # v1.4.0
     secrets:
       sonar-token: ${{ secrets.SQ_TOKEN }}
