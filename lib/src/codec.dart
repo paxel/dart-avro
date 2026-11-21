@@ -13,6 +13,7 @@ import 'schema.dart';
 ///
 /// [AvroCodec.encode] needs it only where more than one branch of a union fits a value;
 /// [name] is the full name of a named type, or the type name of any other (`int`, `map`, …).
+/// A codec with `decodeBranches` decodes unions into it, so the values encode back unchanged.
 final class Branch {
   const Branch(this.name, this.value);
 
@@ -35,14 +36,19 @@ final class AvroCodec {
   /// A codec for data written with [writer] and read as [reader], which defaults to
   /// [writer]. The resolution of the two is compiled here, once; throws
   /// [ResolutionException] if they do not resolve.
+  ///
+  /// With [decodeBranches], every value of a union with two or more non-null branches is
+  /// decoded as a [Branch] of the reader's branch; `null` and the value of a union of `null`
+  /// and one other branch stay plain.
   AvroCodec({
     required this.writer,
     Schema? reader,
     this.limits = const AvroLimits(),
+    this.decodeBranches = false,
   }) : reader = reader ?? writer,
        _plan = reader == null || identical(reader, writer)
            ? null
-           : resolve(writer, reader);
+           : resolve(writer, reader, branches: decodeBranches);
 
   /// The schema data is encoded with.
   final Schema writer;
@@ -52,6 +58,9 @@ final class AvroCodec {
 
   /// The limits on the input this codec decodes.
   final AvroLimits limits;
+
+  /// Whether a value of a union with two or more non-null branches is decoded as a [Branch].
+  final bool decodeBranches;
 
   /// How data of the writer schema is read as the reader schema; null when they are one.
   final Plan? _plan;
@@ -169,7 +178,7 @@ void encodeInto(AvroCodec codec, BinaryWriter out, Object? value) =>
 
 /// Decodes one datum with [codec] from [input]; for this package's own framing.
 Object? decodeFrom(AvroCodec codec, BinaryReader input) {
-  final decoder = _Decoder(input, codec.limits);
+  final decoder = _Decoder(input, codec.limits, codec.decodeBranches);
   final plan = codec._plan;
   if (plan == null) return decoder.decode(codec.writer, r'$', 0);
   return runPlan(
@@ -426,10 +435,13 @@ int minEncodedSize(Schema schema, [Set<Schema>? visiting]) {
 }
 
 final class _Decoder {
-  _Decoder(this.input, this.limits);
+  _Decoder(this.input, this.limits, this.decodeBranches);
 
   final BinaryReader input;
   final AvroLimits limits;
+
+  /// Whether a union with two or more non-null branches decodes into a [Branch].
+  final bool decodeBranches;
 
   /// The item count of the next block of an array or map, checked against the input.
   int blockCount(Schema itemSchema, int perItemExtra, String path) {
@@ -545,7 +557,10 @@ final class _Decoder {
         if (i < 0 || i >= branches.length) {
           input.fail('the union has no branch $i', start);
         }
-        return decode(branches[i], path, depth + 1);
+        final value = decode(branches[i], path, depth + 1);
+        return decodeBranches && decodesAsBranch(schema, branches[i])
+            ? Branch(branchName(branches[i]), value)
+            : value;
     }
   }
 }
