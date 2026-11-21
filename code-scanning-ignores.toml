@@ -60,3 +60,19 @@ ignoreUntil = 2027-05-21
 reason = """The fuzzer's pseudorandom generator is seeded on purpose, so that a seed reproduces \
 a run; it chooses mutations of test input and protects nothing."""
 
+[[IgnoredAlerts]]
+tool = "Scorecard"
+rule = "FuzzingID"
+ignoreUntil = 2027-05-21
+reason = """Scorecard recognises fuzzers it knows (OSS-Fuzz, ClusterFuzzLite, cargo-fuzz and \
+the like) and none for Dart. The decoder and the container file reader are fuzzed weekly through \
+the shared fuzz workflow of paxel/gates (stack dart, tool/fuzz/fuzz.dart)."""
+
+[[IgnoredAlerts]]
+tool = "Scorecard"
+rule = "SASTID"
+ignoreUntil = 2027-02-19
+reason = """The first commits went straight to summer, before the repository took changes by pull \
+request, so Scorecard counts them as not checked by SAST. CodeQL and SonarQube Cloud run on every \
+pull request; the finding clears as merged pull requests replace those commits."""
+
