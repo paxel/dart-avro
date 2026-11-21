@@ -159,16 +159,16 @@ void main() {
   }
   try {
     shallow.encode(list(6));
-  } on EncodeException catch (e) {
-    print(e);
+  } on LimitExceededException catch (e) {
+    print('${e.limit}: ${e.message}');
   }
 }</code></pre>
 <pre data-example-output="guide/limits-depth"><code>{next: {next: {next: {next: {next: null}}}}}
 maxValueDepth: the value at $.next.next.next.next.next.next is nested deeper than 10
-EncodeException at $.next.next.next.next.next.next: the value is nested deeper than 10</code></pre>
+maxValueDepth: the value at $.next.next.next.next.next.next is nested deeper than 10</code></pre>
 <p>
   <code>encode</code> checks the same depth, so a codec does not write what it would refuse to
-  read; there, the failure is an <code>EncodeException</code>.
+  read; there too, the failure is a <code>LimitExceededException</code>.
 </p>
 
 <h2>Empty items: <code>maxZeroSizeItems</code></h2>
@@ -203,7 +203,7 @@ maxZeroSizeItems: an array declares 2000000 items of zero bytes at $, the limit 
 2000000</code></pre>
 <p>
   The reader applies its own <code>maxZeroSizeItems</code> to the record count of a block whose
-  records take zero bytes; a block over it throws <code>DecodeException</code>.
+  records take zero bytes; a block over it throws <code>LimitExceededException</code>.
 </p>
 
 <h2>A checklist for untrusted bytes</h2>

@@ -260,6 +260,23 @@ void main() {
       );
     });
 
+    test('a block of zero-size records over maxZeroSizeItems throws LimitExceededException', () {
+      final bytes = file(schema: '"null"', blocks: [(10, <int>[])]);
+      expect(
+        () => AvroFileReader(
+          bytes,
+          limits: const AvroLimits(maxZeroSizeItems: 5),
+        ).records().toList(),
+        throwsA(
+          isA<LimitExceededException>().having(
+            (e) => e.limit,
+            'limit',
+            'maxZeroSizeItems',
+          ),
+        ),
+      );
+    });
+
     test('uncompressed blocks count as well', () {
       final bytes = file(
         schema: '{"type": "fixed", "name": "F", "size": 10}',

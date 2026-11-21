@@ -149,13 +149,21 @@ final class AvroFileReader {
       total += block.length;
       final blockInput = BinaryReader(block);
       final min = minEncodedSize(c.writer);
-      if (min > 0
-          ? count > block.length ~/ min
-          : count > (limits.maxZeroSizeItems ?? count)) {
-        input.fail(
-          'the block declares $count records, more than it can hold',
-          start,
-        );
+      if (min > 0) {
+        if (count > block.length ~/ min) {
+          input.fail(
+            'the block declares $count records, more than it can hold',
+            start,
+          );
+        }
+      } else {
+        final max = limits.maxZeroSizeItems;
+        if (max != null && count > max) {
+          throw LimitExceededException(
+            'a block declares $count records of zero bytes, the limit is $max',
+            limit: 'maxZeroSizeItems',
+          );
+        }
       }
       for (var i = 0; i < count; i++) {
         yield decodeFrom(c, blockInput);

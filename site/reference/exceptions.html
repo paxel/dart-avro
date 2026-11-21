@@ -58,14 +58,14 @@
 <h2><code>EncodeException</code></h2>
 <p>A value does not fit the schema it is encoded with.</p>
 <ul>
-  <li>Thrown by <code>encode</code>, <code>encodeSingleObject</code> and <code>AvroFileWriter.add</code>: a value of the wrong Dart type, a missing record field or an unknown key, an <code>int</code> beyond 32 bits, a wrong <code>fixed</code> size, an unknown enum symbol, an unpaired surrogate, a union value that fits no branch or more than one, a logical value that would lose precision or does not fit, a value nested deeper than <code>maxValueDepth</code>.</li>
+  <li>Thrown by <code>encode</code>, <code>encodeSingleObject</code> and <code>AvroFileWriter.add</code>: a value of the wrong Dart type, a missing record field or an unknown key, an <code>int</code> beyond 32 bits, a wrong <code>fixed</code> size, an unknown enum symbol, an unpaired surrogate, a union value that fits no branch or more than one, a logical value that would lose precision or does not fit.</li>
   <li><code>path</code>: the place in the value: <code>$</code>, <code>$.written.year</code>, <code>$.items[2]</code>.</li>
 </ul>
 
 <h2><code>LimitExceededException</code></h2>
 <p>Input exceeds one of the <a href="limits.html">limits</a>.</p>
 <ul>
-  <li>Thrown by <code>Schema.parse</code> for <code>maxSchemaBytes</code> and <code>maxSchemaDepth</code>, by <code>decode</code> and <code>decodeSingleObject</code> for <code>maxValueDepth</code> and <code>maxZeroSizeItems</code>, and while iterating <code>AvroFileReader.records</code> for <code>maxBlockBytes</code> and <code>maxTotalBytes</code>.</li>
+  <li>Thrown by <code>Schema.parse</code> for <code>maxSchemaBytes</code> and <code>maxSchemaDepth</code>, by <code>decode</code>, <code>decodeSingleObject</code>, <code>encode</code> and <code>encodeSingleObject</code> for <code>maxValueDepth</code>, by <code>decode</code> and <code>decodeSingleObject</code> for <code>maxZeroSizeItems</code>, and while iterating <code>AvroFileReader.records</code> for <code>maxBlockBytes</code>, <code>maxTotalBytes</code> and <code>maxZeroSizeItems</code>. Every limit throws this exception, whatever the direction.</li>
   <li><code>limit</code>: the name of the <code>AvroLimits</code> field, such as <code>maxBlockBytes</code>.</li>
 </ul>
 

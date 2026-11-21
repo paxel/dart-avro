@@ -36,9 +36,9 @@
     <tr><td><code>maxSchemaBytes</code></td>  <td><code>Schema.parse</code></td>                                 <td><code>LimitExceededException</code></td></tr>
     <tr><td><code>maxSchemaDepth</code></td>  <td><code>Schema.parse</code></td>                                 <td><code>LimitExceededException</code></td></tr>
     <tr><td><code>maxValueDepth</code></td>   <td><code>AvroCodec</code>: <code>decode</code>, <code>decodeSingleObject</code></td><td><code>LimitExceededException</code></td></tr>
-    <tr><td><code>maxValueDepth</code></td>   <td><code>AvroCodec</code>: <code>encode</code>, <code>encodeSingleObject</code></td><td><code>EncodeException</code></td></tr>
+    <tr><td><code>maxValueDepth</code></td>   <td><code>AvroCodec</code>: <code>encode</code>, <code>encodeSingleObject</code></td><td><code>LimitExceededException</code></td></tr>
     <tr><td><code>maxZeroSizeItems</code></td><td><code>AvroCodec</code>: decoding an array</td>                 <td><code>LimitExceededException</code></td></tr>
-    <tr><td><code>maxZeroSizeItems</code></td><td><code>AvroFileReader</code>: the record count of a block</td>   <td><code>DecodeException</code></td></tr>
+    <tr><td><code>maxZeroSizeItems</code></td><td><code>AvroFileReader</code>: the record count of a block</td>   <td><code>LimitExceededException</code></td></tr>
     <tr><td><code>maxBlockBytes</code></td>   <td><code>AvroFileReader</code>: <code>records</code></td>        <td><code>LimitExceededException</code>, while iterating</td></tr>
     <tr><td><code>maxTotalBytes</code></td>   <td><code>AvroFileReader</code>: <code>records</code></td>        <td><code>LimitExceededException</code>, while iterating</td></tr>
   </tbody>
