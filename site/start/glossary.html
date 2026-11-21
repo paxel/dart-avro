@@ -1,0 +1,98 @@
+<!-- page: title="Glossary" track="start" order=3 summary="Every avro term in one or two sentences: writer and reader schema, resolution, canonical form, fingerprint, props, codec, datum, branch, container file, header, metadata, block, sync marker, compression, single-object header." -->
+<p class="lede">
+  Every term the documentation uses, defined once. The vocabulary itself is kept in
+  <code>CONTEXT.md</code> in the repository.
+</p>
+
+<h2>Schemas</h2>
+<dl class="glossary">
+  <dt id="writer-schema">Writer schema</dt>
+  <dd>The schema the data was encoded with.</dd>
+
+  <dt id="reader-schema">Reader schema</dt>
+  <dd>
+    The schema the caller wants the data in. The writer schema is resolved against it.
+  </dd>
+
+  <dt id="resolution">Resolution</dt>
+  <dd>
+    The mapping from a writer schema to a reader schema, as the Avro specification defines it.
+  </dd>
+
+  <dt id="canonical-form">Canonical form</dt>
+  <dd>
+    The Parsing Canonical Form of a schema, as the Avro specification defines it.
+  </dd>
+
+  <dt id="fingerprint">Fingerprint</dt>
+  <dd>
+    A hash of a schema's canonical form: CRC-64-AVRO, MD5 or SHA-256.
+  </dd>
+
+  <dt id="props">Props</dt>
+  <dd>
+    The attributes of a schema or a field that the Avro specification does not define. Not to be
+    confused with metadata, which is the container file's.
+  </dd>
+</dl>
+
+<h2>Values</h2>
+<dl class="glossary">
+  <dt id="codec">Codec</dt>
+  <dd>
+    The object that encodes and decodes values for one writer schema and one reader schema:
+    <code>AvroCodec</code>.
+  </dd>
+
+  <dt id="datum">Datum</dt>
+  <dd>
+    One encoded value of a schema.
+  </dd>
+
+  <dt id="branch">Branch</dt>
+  <dd>
+    The member of a union schema that a value belongs to. <code>Branch(name, value)</code> names it
+    when encoding.
+  </dd>
+</dl>
+
+<h2>Container files</h2>
+<dl class="glossary">
+  <dt id="container-file">Container file</dt>
+  <dd>
+    An Avro object container file: a header, then data blocks.
+  </dd>
+
+  <dt id="header">Header</dt>
+  <dd>The magic, the metadata and the sync marker at the start of a container file.</dd>
+
+  <dt id="metadata">Metadata</dt>
+  <dd>
+    The key-value map in a container file's header. Not to be confused with props, which are a
+    schema's.
+  </dd>
+
+  <dt id="block">Block</dt>
+  <dd>
+    A run of datums in a container file, compressed together and followed by the sync marker.
+  </dd>
+
+  <dt id="sync-marker">Sync marker</dt>
+  <dd>The 16 bytes that end every block of a container file.</dd>
+
+  <dt id="compression">Compression</dt>
+  <dd>
+    How the blocks of a container file are compressed: <code>null</code> or <code>deflate</code>.
+    The Avro specification calls it the file's codec; here "codec" is taken by the encoding object
+    above.
+  </dd>
+</dl>
+
+<h2>Single-object encoding</h2>
+<dl class="glossary">
+  <dt id="single-object-header">Single-object header</dt>
+  <dd>
+    The marker <code>C3 01</code> and the writer schema's CRC-64-AVRO fingerprint that precede a
+    datum in single-object encoding.
+  </dd>
+</dl>

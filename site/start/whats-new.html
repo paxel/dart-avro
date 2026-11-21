@@ -1,0 +1,77 @@
+<!-- page: title="What's new" track="start" order=4 summary="Version 0.1.0 is the first release of avro: schemas, binary and single-object encoding, schema resolution, logical types, fingerprints, container files and limits." -->
+<p class="lede">
+  0.1.0 is the first release. This page says what it contains, for a reader rather than as a list
+  of changes; the <a href="https://github.com/paxel/dart-avro/blob/summer/CHANGELOG.md">changelog</a> has the short version.
+</p>
+
+<h2>Schemas</h2>
+<ul>
+  <li>
+    <code>Schema.parse</code> reads any Avro 1.12 schema into an immutable tree. The tree keeps the
+    documentation, the aliases, the defaults and the attributes the specification does not
+    define.
+  </li>
+  <li>
+    <code>schema.canonicalForm</code> is the Parsing Canonical Form. <code>crc64</code>,
+    <code>md5</code> and <code>sha256</code> are its fingerprints. CRC-64-AVRO is an
+    <code>int</code>; <code>crc64ToBytes</code> and <code>crc64FromBytes</code> convert it to and
+    from its 8 little-endian bytes.
+  </li>
+</ul>
+
+<h2>Values</h2>
+<ul>
+  <li>
+    <code>AvroCodec</code> encodes and decodes every primitive and complex type in Avro's binary
+    encoding. Records and maps are <code>Map&lt;String, Object?&gt;</code>. Malformed input is
+    rejected with an <code>AvroException</code>.
+  </li>
+  <li>
+    Every logical type of Avro 1.12 decodes to a Dart value: <code>DateTime</code>,
+    <code>Duration</code> and <code>String</code> where they fit, and <code>AvroDate</code>,
+    <code>AvroLocalTimestamp</code>, <code>AvroTimestampNanos</code>, <code>AvroDecimal</code> and
+    <code>AvroDuration</code> where Dart has no type of its own.
+  </li>
+  <li>A union value whose branch is ambiguous is written with <code>Branch</code>.</li>
+</ul>
+
+<h2>Schema resolution</h2>
+<p>
+  <code>AvroCodec(writer:, reader:)</code> reads data of one schema as another, by Avro's schema
+  resolution. The resolution is worked out once, when the codec is made. Schemas that do not
+  resolve throw <code>ResolutionException</code> there.
+</p>
+
+<h2>Single-object encoding</h2>
+<p>
+  <code>encodeSingleObject</code> and <code>decodeSingleObject</code> write and read a value with
+  the fingerprint of its schema in front. <code>SingleObjectHeader.parse</code> reads the
+  fingerprint of a message first, so that you can choose the codec before you decode.
+</p>
+
+<h2>Container files</h2>
+<ul>
+  <li>
+    <code>AvroFileReader</code> reads container files compressed with <code>null</code> or
+    <code>deflate</code>: the header first, then the records lazily, one block at a time, with the
+    file's schema or a codec you choose.
+  </li>
+  <li>
+    <code>AvroFileWriter</code> writes them, with your metadata in your order, the schema text and
+    sync marker of your choice, and blocks that end by size or at <code>flush</code>.
+  </li>
+</ul>
+
+<h2>Limits</h2>
+<p>
+  <code>AvroLimits</code> bounds the schema size, the nesting of schemas and values, the
+  decompressed size of container files and the count of zero-byte items. The defaults are finite,
+  so a small input cannot expand without bound.
+</p>
+
+<h2>Not in this release</h2>
+<p>
+  JSON encoding, the compressions <code>snappy</code>, <code>bzip2</code>, <code>xz</code> and
+  <code>zstandard</code>, the Avro IPC/RPC protocol and code generation. The package does not run
+  on Flutter web.
+</p>

@@ -1,0 +1,83 @@
+name: Pages
+
+# Builds the documentation site (site/ -> site-dist/) on every push to summer,
+# every pull request and every release tag; deploys it to GitHub Pages only
+# for release tags. Every build assembles every released version (each tag
+# that carries a site, under /vX.Y.Z/) plus the working tree at the root, so
+# a release whose docs no longer build fails on summer, not on release day.
+#
+# One-time manual steps for the repository owner:
+#   1. Settings -> Pages -> Source: "GitHub Actions".
+#   2. Settings -> Environments -> github-pages -> Deployment branches and tags:
+#      allow tags matching "v*" (the deploy job runs only on those).
+
+on:
+  push:
+    branches: [summer]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pages-build-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # every release tag is built, see scripts/build-site-all.js
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install lint tooling
+        run: npm ci --ignore-scripts
+
+      - name: Lint site sources
+        run: |
+          ./node_modules/.bin/eslint scripts/build-site.js scripts/build-site-all.js scripts/site site/assets/site.js tests/site
+          ./node_modules/.bin/prettier --check scripts/build-site.js scripts/build-site-all.js scripts/site site/assets/site.js site/assets/site.css tests/site
+
+      - name: Build site, every released version and the working tree
+        run: node scripts/build-site-all.js --base "/${{ github.event.repository.name }}/"
+
+      - name: Test site build
+        run: npm run site:test
+
+      # The version as scripts/build-site.js reads it: the top-level version: line of
+      # pubspec.yaml, without a +build suffix.
+      - name: Check that the tag matches the pubspec.yaml version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          expected="v$(sed -n 's/^version:[[:space:]]*\([^+[:space:]#]*\).*/\1/p' pubspec.yaml | head -n 1)"
+          if [ "$expected" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match pubspec.yaml version ($expected); the site would describe the wrong release"
+            exit 1
+          fi
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site-dist
+
+  deploy:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -1,0 +1,89 @@
+<!-- page: title="avro" summary="A pure-Dart implementation of the binary core of Apache Avro 1.12: schemas, binary and single-object encoding, schema resolution, fingerprints and object container files." -->
+<p class="lede">
+  <code>avro</code> is a pure-Dart implementation of the binary core of
+  <a href="https://avro.apache.org/docs/1.12.0/specification/">Apache Avro 1.12</a>: schemas,
+  binary and single-object encoding, schema resolution, fingerprints and object container files.
+</p>
+
+<h2>What it is</h2>
+<p>
+  The package reads an Avro schema from its JSON text and gives you a codec for it. The codec
+  turns Dart values into Avro's binary encoding and back. Records and maps are
+  <code>Map&lt;String, Object?&gt;</code>, arrays are <code>List&lt;Object?&gt;</code>; there is no
+  code generation. A second schema lets the codec read old data as a newer shape, by Avro's schema
+  resolution. Container files, the <code>.avro</code> files other Avro libraries write, are read
+  and written in memory.
+</p>
+<p>
+  It has one public library, <code>package:avro/avro.dart</code>, and one dependency,
+  <code>crypto</code>, for the MD5 and SHA-256 fingerprints.
+</p>
+
+<div class="callout">
+  <p class="eyebrow">Native only</p>
+  <p>
+    The package runs on the Dart VM and AOT: Android, iOS, Linux, macOS and Windows. Flutter web is
+    not supported. The package relies on 64-bit <code>int</code> values for Avro's
+    <code>long</code> and on <code>dart:io</code> for DEFLATE.
+  </p>
+</div>
+
+<h2>What 0.1.0 covers</h2>
+<ul>
+  <li>Every primitive, complex and logical type of Avro 1.12.</li>
+  <li>Binary encoding and single-object encoding.</li>
+  <li>Schema parsing, and schema resolution between a writer and a reader schema.</li>
+  <li>Parsing Canonical Form, with the fingerprints CRC-64-AVRO, MD5 and SHA-256.</li>
+  <li>Object container files, read and write, compressed with <code>null</code> or <code>deflate</code>.</li>
+  <li>Limits on untrusted input, on by default.</li>
+</ul>
+
+<h2>What 0.1.0 does not cover</h2>
+<ul>
+  <li>JSON encoding.</li>
+  <li>The compressions <code>snappy</code>, <code>bzip2</code>, <code>xz</code> and <code>zstandard</code>. A file that uses one of them is rejected.</li>
+  <li>The Avro IPC/RPC protocol.</li>
+  <li>Code generation of typed Dart classes.</li>
+</ul>
+
+<h2>Install</h2>
+<p>Add the package to the <code>dependencies</code> of your <code>pubspec.yaml</code>:</p>
+<pre><code>dependencies:
+  avro: ^0.1.0</code></pre>
+<p>
+  Then follow <a href="start/getting-started.html">Getting started</a>: a schema, a record, and a
+  container file in five minutes.
+</p>
+
+<h2>The documentation</h2>
+<p>Three tracks. Press <kbd>/</kbd> to search across all of them.</p>
+<ul class="cards">
+  <li>
+    <a class="card" href="start/index.html">
+      <p class="eyebrow">Track</p>
+      <p class="card-title">Start</p>
+      <p>Getting started, the concepts, the glossary, and what is new in this release.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="guide/index.html">
+      <p class="eyebrow">Track</p>
+      <p class="card-title">Guide</p>
+      <p>One task per page: schemas, unions, resolution, container files, limits, errors.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="reference/index.html">
+      <p class="eyebrow">Track</p>
+      <p class="card-title">Reference</p>
+      <p>The value mapping, the limits, the exceptions and the conformance with the specification.</p>
+    </a>
+  </li>
+</ul>
+
+<h2>Elsewhere</h2>
+<ul>
+  <li><a href="https://pub.dev/packages/avro">The package on pub.dev</a>.</li>
+  <li><a href="https://pub.dev/documentation/avro/latest/">The API reference</a> of every class and member, on pub.dev.</li>
+  <li><a href="https://github.com/paxel/dart-avro">The source code</a> and the <a href="https://github.com/paxel/dart-avro/blob/summer/CHANGELOG.md">changelog</a>, on GitHub.</li>
+</ul>

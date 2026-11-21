@@ -1,0 +1,535 @@
+// avro documentation site: theme toggle, sidebar, search, copy-link anchors.
+// No dependencies. Everything degrades: without storage the theme follows the
+// system, without clipboard the link is copied through a selection.
+(function () {
+  "use strict";
+
+  /**
+   * The browser APIs this script probes before it uses them: an older browser may lack them.
+   * @typedef {object} ProbedWindow
+   * @property {Window["matchMedia"]} [matchMedia]
+   * @property {Window["getSelection"]} [getSelection]
+   */
+  /**
+   * @typedef {Omit<MediaQueryList, "addEventListener"> & {
+   *   addEventListener?: MediaQueryList["addEventListener"],
+   * }} ProbedMediaQueryList
+   */
+  /** @typedef {{ clipboard?: Partial<Pick<Clipboard, "writeText">> }} ProbedNavigator */
+  /** @typedef {Partial<Pick<Element, "closest">>} ProbedTarget An event target may lack `closest`. */
+  /**
+   * This is one page of `search-index.json`, as `buildIndex` in scripts/build-site.js writes it.
+   * @typedef {object} SearchPage
+   * @property {string} title
+   * @property {string} [track]
+   * @property {string} url
+   * @property {string} [summary]
+   * @property {string} [intro]
+   * @property {{ id: string, text: string, body?: string }[]} [headings]
+   */
+  /**
+   * @typedef {object} SearchHit
+   * @property {number} score
+   * @property {number} order
+   * @property {string} url
+   * @property {string} title
+   * @property {string} meta
+   * @property {string} snippet
+   */
+
+  const root = document.documentElement;
+  /**
+   * The text, or the fallback for a missing or an empty one: what `text || fallback` gives.
+   * Written without `??`, which is newer than the syntax this script is served in.
+   * @param {string | null | undefined} text
+   * @param {string} fallback
+   * @returns {string}
+   */
+  function textOr(text, fallback) {
+    return typeof text === "string" && text !== "" ? text : fallback;
+  }
+
+  const siteRoot = textOr(root.getAttribute("data-root"), "");
+  const THEME_KEY = "avro-theme";
+  const live = document.getElementById("live");
+
+  /** @param {string} text */
+  function announce(text) {
+    if (!live) return;
+    live.textContent = "";
+    window.setTimeout(function () {
+      live.textContent = text;
+    }, 50);
+  }
+
+  // ---------- theme ----------
+
+  const themeToggle = document.querySelector(".theme-toggle");
+  /** @type {ProbedMediaQueryList | null} */
+  const darkQuery = /** @type {ProbedWindow} */ (window).matchMedia
+    ? window.matchMedia("(prefers-color-scheme: dark)")
+    : null;
+
+  function effectiveTheme() {
+    const chosen = root.getAttribute("data-theme");
+    if (chosen === "light" || chosen === "dark") return chosen;
+    return (darkQuery ? darkQuery.matches : false) ? "dark" : "light";
+  }
+
+  function labelThemeToggle() {
+    if (!themeToggle) return;
+    const next = effectiveTheme() === "dark" ? "light" : "dark";
+    themeToggle.setAttribute("aria-label", "Switch to " + next + " theme");
+  }
+
+  /** @param {string} theme */
+  function setTheme(theme) {
+    root.setAttribute("data-theme", theme);
+    try {
+      window.localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      // Storage unavailable (private mode, blocked): the choice lasts for this page only.
+    }
+    labelThemeToggle();
+  }
+
+  if (themeToggle) {
+    themeToggle.addEventListener("click", function () {
+      setTheme(effectiveTheme() === "dark" ? "light" : "dark");
+    });
+    if (darkQuery) {
+      if (darkQuery.addEventListener) darkQuery.addEventListener("change", labelThemeToggle);
+    }
+    labelThemeToggle();
+  }
+
+  // ---------- sidebar (narrow screens) ----------
+
+  const navToggle = /** @type {HTMLElement | null} */ (document.querySelector(".nav-toggle"));
+  const sidebar = document.getElementById("sidebar");
+
+  function sidebarIsOpen() {
+    return sidebar ? sidebar.classList.contains("is-open") : false;
+  }
+
+  /** @returns {HTMLElement[]} */
+  function sidebarFocusables() {
+    return [/** @type {HTMLElement} */ (navToggle)].concat(
+      /** @type {HTMLElement[]} */ (
+        Array.prototype.slice.call(/** @type {HTMLElement} */ (sidebar).querySelectorAll("a[href]"))
+      ),
+    );
+  }
+
+  /** @param {boolean} open */
+  function setSidebar(open) {
+    if (!sidebar || !navToggle) return;
+    sidebar.classList.toggle("is-open", open);
+    navToggle.setAttribute("aria-expanded", String(open));
+    navToggle.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+    if (open) {
+      const first = /** @type {HTMLElement | null} */ (sidebar.querySelector("a[href]"));
+      if (first) first.focus();
+    } else {
+      navToggle.focus();
+    }
+  }
+
+  if (navToggle && sidebar) {
+    navToggle.addEventListener("click", function () {
+      setSidebar(!sidebarIsOpen());
+    });
+    document.addEventListener("click", function (event) {
+      if (!sidebarIsOpen()) return;
+      const target = /** @type {Node | null} */ (event.target);
+      if (sidebar.contains(target) || navToggle.contains(target)) return;
+      setSidebar(false);
+    });
+    document.addEventListener("keydown", function (event) {
+      if (!sidebarIsOpen()) return;
+      if (event.key === "Escape") {
+        setSidebar(false);
+        event.preventDefault();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      // Keep Tab inside the open panel (toggle button + its links).
+      const focusables = sidebarFocusables();
+      const first = /** @type {HTMLElement} */ (focusables[0]);
+      const last = /** @type {HTMLElement} */ (focusables[focusables.length - 1]);
+      if (event.shiftKey && document.activeElement === first) {
+        last.focus();
+        event.preventDefault();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        first.focus();
+        event.preventDefault();
+      } else if (
+        !sidebar.contains(document.activeElement) &&
+        document.activeElement !== navToggle
+      ) {
+        first.focus();
+        event.preventDefault();
+      }
+    });
+  }
+
+  // ---------- copy link on heading anchors ----------
+
+  /** @param {Element} anchor */
+  function selectHeadingText(anchor) {
+    const heading = anchor.parentElement;
+    if (!heading || !(/** @type {ProbedWindow} */ (window).getSelection)) return;
+    const range = document.createRange();
+    range.selectNodeContents(heading);
+    range.setEndBefore(anchor);
+    const selection = /** @type {Selection} */ (window.getSelection());
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  /** @param {Element} anchor */
+  function flashCopied(anchor) {
+    anchor.setAttribute("data-copied", "");
+    announce("Link copied");
+    window.setTimeout(function () {
+      anchor.removeAttribute("data-copied");
+    }, 1600);
+  }
+
+  // Without the async clipboard: select the URL in a scratch field and copy it;
+  // if even that fails, leave the heading text selected for a manual copy.
+  /**
+   * @param {Element} anchor
+   * @param {string} url
+   */
+  function copyThroughSelection(anchor, url) {
+    const field = document.createElement("textarea");
+    field.value = url;
+    field.setAttribute("readonly", "");
+    field.className = "sr-only";
+    document.body.appendChild(field);
+    field.select();
+    /** @type {boolean} */
+    let copied;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- This is the fallback for browsers without the async clipboard, which only have execCommand.
+      copied = document.execCommand("copy");
+    } catch {
+      copied = false;
+    }
+    document.body.removeChild(field);
+    if (copied) {
+      flashCopied(anchor);
+    } else {
+      selectHeadingText(anchor);
+      announce("Could not copy automatically; the heading is selected");
+    }
+  }
+
+  document.addEventListener("click", function (event) {
+    /** @type {ProbedTarget} */
+    const clicked = /** @type {ProbedTarget} */ (event.target);
+    const anchor = clicked.closest ? clicked.closest("a.anchor") : null;
+    if (!anchor) return;
+    const url = String(window.location.href.split("#")[0]) + String(anchor.getAttribute("href"));
+    const clipboard = /** @type {ProbedNavigator} */ (navigator).clipboard;
+    if (clipboard ? clipboard.writeText : false) {
+      navigator.clipboard.writeText(url).then(
+        function () {
+          flashCopied(anchor);
+        },
+        function () {
+          copyThroughSelection(anchor, url);
+        },
+      );
+    } else {
+      copyThroughSelection(anchor, url);
+    }
+  });
+
+  // ---------- table of contents: mark the section in view ----------
+
+  const tocLinks = /** @type {Element[]} */ (
+    Array.prototype.slice.call(document.querySelectorAll(".toc a[href^='#']"))
+  );
+  if (tocLinks.length && "IntersectionObserver" in window) {
+    /** @type {Record<string, Element>} */
+    const byId = {};
+    tocLinks.forEach(function (link) {
+      byId[/** @type {string} */ (link.getAttribute("href")).slice(1)] = link;
+    });
+    const observer = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          tocLinks.forEach(function (l) {
+            l.removeAttribute("aria-current");
+          });
+          const link = byId[entry.target.id];
+          if (link) link.setAttribute("aria-current", "true");
+        });
+      },
+      { rootMargin: "-10% 0px -75% 0px" },
+    );
+    Object.keys(byId).forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+  }
+
+  // ---------- search ----------
+
+  const inputElement = /** @type {HTMLInputElement | null} */ (document.getElementById("search"));
+  const resultsElement = document.getElementById("search-results");
+  if (!inputElement || !resultsElement) return;
+  // The functions below are hoisted, so they need names that were never null.
+  const input = inputElement;
+  const results = resultsElement;
+
+  /** @type {Promise<SearchPage[]> | null} */
+  let indexPromise = null;
+  /** @type {Element[]} */
+  let items = [];
+  let active = -1;
+
+  function loadIndex() {
+    if (indexPromise) return indexPromise;
+    indexPromise = window
+      .fetch(siteRoot + "search-index.json")
+      .then(function (res) {
+        if (!res.ok) throw new Error("search index: HTTP " + String(res.status));
+        return /** @type {Promise<SearchPage[]>} */ (res.json());
+      })
+      .catch(function (/** @type {unknown} */ err) {
+        indexPromise = null; // retry on the next keystroke
+        throw err;
+      });
+    return indexPromise;
+  }
+
+  /** @param {string | number} text */
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  /** @param {string} text */
+  function escapeRegExp(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  /**
+   * @param {string} text
+   * @param {string} query
+   */
+  function highlight(text, query) {
+    const re = new RegExp("(" + escapeRegExp(query) + ")", "ig");
+    return text
+      .split(re)
+      .map(function (part, i) {
+        return i % 2 === 1 ? "<mark>" + escapeHtml(part) + "</mark>" : escapeHtml(part);
+      })
+      .join("");
+  }
+
+  /**
+   * @param {string} text
+   * @param {string} query
+   */
+  function snippet(text, query) {
+    const at = text.toLowerCase().indexOf(query.toLowerCase());
+    if (at < 0) return text.slice(0, 120);
+    const start = Math.max(0, at - 50);
+    const end = Math.min(text.length, at + query.length + 90);
+    return (start > 0 ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "");
+  }
+
+  // Heading matches outrank body matches; a page-title match outranks both.
+  /**
+   * @param {SearchPage[]} index
+   * @param {string} query
+   */
+  function search(index, query) {
+    const q = query.toLowerCase();
+    /** @type {SearchHit[]} */
+    const found = [];
+    index.forEach(function (page, pageNo) {
+      const pageLabel = page.track ? page.track + " · " + page.title : page.title;
+      if (page.title.toLowerCase().includes(q)) {
+        found.push({
+          score: 3,
+          order: pageNo,
+          url: page.url,
+          title: page.title,
+          meta: textOr(page.track, "Page"),
+          snippet: textOr(page.summary, textOr(page.intro, "")),
+        });
+      } else if (textOr(page.intro, "").toLowerCase().includes(q)) {
+        found.push({
+          score: 1,
+          order: pageNo,
+          url: page.url,
+          title: page.title,
+          meta: textOr(page.track, "Page"),
+          snippet: snippet(/** @type {string} */ (page.intro), query),
+        });
+      }
+      (Array.isArray(page.headings) ? page.headings : []).forEach(function (h) {
+        const inHeading = h.text.toLowerCase().includes(q);
+        const inBody = textOr(h.body, "").toLowerCase().includes(q);
+        if (!inHeading && !inBody) return;
+        found.push({
+          score: inHeading ? 2 : 1,
+          order: pageNo,
+          url: page.url + "#" + h.id,
+          title: h.text,
+          meta: pageLabel,
+          snippet: snippet(textOr(h.body, ""), query),
+        });
+      });
+    });
+    found.sort(function (a, b) {
+      return b.score - a.score || a.order - b.order;
+    });
+    return found.slice(0, 8);
+  }
+
+  function close() {
+    results.hidden = true;
+    results.innerHTML = "";
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
+    items = [];
+    active = -1;
+  }
+
+  /** @param {number} i */
+  function setActive(i) {
+    items.forEach(function (li, n) {
+      li.setAttribute("aria-selected", String(n === i));
+    });
+    active = i;
+    if (i >= 0) {
+      const item = /** @type {Element} */ (items[i]);
+      input.setAttribute("aria-activedescendant", item.id);
+      item.scrollIntoView({ block: "nearest" });
+    } else {
+      input.removeAttribute("aria-activedescendant");
+    }
+  }
+
+  /** @param {string} html */
+  function open(html) {
+    results.innerHTML = html;
+    results.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+    items = Array.from(results.querySelectorAll("li[role='option']"));
+    active = -1;
+  }
+
+  /**
+   * @param {SearchHit[]} hits
+   * @param {string} query
+   */
+  function render(hits, query) {
+    if (!hits.length) {
+      open('<li class="search-empty" role="presentation">No matches</li>');
+      announce("No matches");
+      return;
+    }
+    open(
+      hits
+        .map(function (hit, i) {
+          return (
+            '<li id="search-hit-' +
+            String(i) +
+            '" role="option" aria-selected="false"><a href="' +
+            escapeHtml(siteRoot + hit.url) +
+            '"><span class="result-title">' +
+            highlight(hit.title, query) +
+            '</span><span class="result-meta">' +
+            escapeHtml(hit.meta) +
+            "</span>" +
+            (hit.snippet
+              ? '<span class="result-snippet">' + highlight(hit.snippet, query) + "</span>"
+              : "") +
+            "</a></li>"
+          );
+        })
+        .join(""),
+    );
+    announce(String(hits.length) + (hits.length === 1 ? " result" : " results"));
+  }
+
+  let pending = 0;
+  function runSearch() {
+    const query = input.value.trim();
+    if (query.length < 2) {
+      close();
+      return;
+    }
+    const ticket = ++pending;
+    loadIndex().then(
+      function (index) {
+        if (ticket !== pending || input.value.trim() !== query) return;
+        render(search(index, query), query);
+      },
+      function () {
+        if (ticket !== pending) return;
+        open('<li class="search-empty" role="presentation">Search unavailable</li>');
+        announce("Search unavailable");
+      },
+    );
+  }
+
+  input.addEventListener("focus", function () {
+    loadIndex().catch(function () {
+      // Reported when the reader actually searches.
+    });
+  });
+  input.addEventListener("input", runSearch);
+  input.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      if (results.hidden) input.blur();
+      else close();
+      event.preventDefault();
+    } else if (event.key === "ArrowDown" && items.length) {
+      setActive((active + 1) % items.length);
+      event.preventDefault();
+    } else if (event.key === "ArrowUp" && items.length) {
+      setActive((active - 1 + items.length) % items.length);
+      event.preventDefault();
+    } else if (event.key === "Enter" && items.length) {
+      const link = /** @type {Element} */ (items[active >= 0 ? active : 0]).querySelector("a");
+      if (link) window.location.href = link.href;
+      event.preventDefault();
+    }
+  });
+
+  document.addEventListener("click", function (event) {
+    if (
+      !results.hidden &&
+      !(
+        /** @type {HTMLElement} */ (input.parentElement).contains(
+          /** @type {Node | null} */ (event.target),
+        )
+      )
+    )
+      close();
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) return;
+    const target = /** @type {HTMLElement | null} */ (event.target);
+    const typing =
+      target &&
+      (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+    if (typing) return;
+    input.focus();
+    input.select();
+    event.preventDefault();
+  });
+})();

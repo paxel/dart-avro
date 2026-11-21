@@ -1,0 +1,932 @@
+#!/usr/bin/env node
+// Builds the documentation site: site/**/*.html (fragments with a front-matter
+// comment) -> site-dist/ (full pages, assets, search-index.json, 404.html).
+// Zero dependencies; Node 22+. Usage:
+//   node scripts/build-site.js [--src site] [--out site-dist] [--base /] [--serve [port]]
+
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import http from "node:http";
+import { fileURLToPath } from "node:url";
+import { escapeHtml } from "./site/html.js";
+
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(SCRIPT_DIR, "..");
+const REPO_URL = "https://github.com/paxel/dart-avro";
+
+/**
+ * A page of the site.
+ * @typedef {object} Page
+ * @property {string} title
+ * @property {string} track
+ * @property {number} order
+ * @property {string} summary
+ * @property {string} url
+ * @property {string} body
+ */
+
+/** @typedef {{ level: number, id: string, text: string }} Heading */
+/** @typedef {{ title: string, url: string, order: number, summary: string | undefined }} NavPage */
+/** @typedef {{ id: string, label: string, pages: NavPage[] }[]} Nav */
+/** @typedef {{ version: string, base: string, pages: string[], latest: boolean }} VersionEntry */
+
+/**
+ * What every rendered page needs beside its own content.
+ * @typedef {object} RenderContext
+ * @property {Nav} nav
+ * @property {string} version
+ * @property {VersionEntry[]} [versions]
+ * @property {string | null} [tag]
+ */
+
+/**
+ * @typedef {object} CollectOptions
+ * @property {string} [srcDir]
+ */
+
+/**
+ * @typedef {object} BuildOptions
+ * @property {string} [srcDir]
+ * @property {string} [outDir]
+ * @property {string} [version]
+ * @property {string | undefined} [base]
+ * @property {string} [assetsDir]
+ * @property {Page[] | null} [pages]
+ * @property {string | null} [tag]
+ * @property {VersionEntry[]} [versions]
+ * @property {Set<string>} [knownTargets]
+ */
+
+export const TRACKS = [
+  { id: "start", label: "Start" },
+  { id: "guide", label: "Guide" },
+  { id: "reference", label: "Reference" },
+];
+
+const FRONT_MATTER_KEYS = ["title", "track", "order", "summary"];
+
+/**
+ * The changelog of the sources a build was made from: the release tag's, or summer's for an untagged working tree.
+ * @param {string | null} tag
+ * @returns {string}
+ */
+export function changelogUrl(tag) {
+  return `${REPO_URL}/blob/${(tag ?? "") || "summer"}/CHANGELOG.md`;
+}
+
+const FONTS_HREF =
+  "https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=Public+Sans:wght@400;600&family=JetBrains+Mono:wght@400&display=swap";
+
+// The brand mark: a datum between two block markers, drawn in the text colour of the brand.
+const BRAND_MARK =
+  '<svg class="mark" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" focusable="false">' +
+  '<rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"/>' +
+  '<path d="M7 7v10M17 7v10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' +
+  '<rect x="10" y="10" width="4" height="4" rx="1" fill="currentColor"/>' +
+  "</svg>";
+
+// ---------------------------------------------------------------------------
+// Small helpers
+
+export { escapeHtml };
+
+/** @type {Record<string, string>} */
+const NAMED_ENTITIES = {
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  mdash: "—",
+  ndash: "–",
+  hellip: "…",
+  rarr: "→",
+  larr: "←",
+  copy: "©",
+  times: "×",
+  middot: "·",
+  laquo: "«",
+  raquo: "»",
+};
+
+/**
+ * Decodes numeric and the named entities the pages use; `&amp;` last so `&amp;lt;` stays `&lt;`.
+ * @param {string} text
+ * @returns {string}
+ */
+export function decodeEntities(text) {
+  return text
+    .replace(/&#x([0-9a-f]+);/gi, (_, /** @type {string} */ hex) =>
+      String.fromCodePoint(Number.parseInt(hex, 16)),
+    )
+    .replace(/&#(\d+);/g, (_, /** @type {string} */ dec) => String.fromCodePoint(Number(dec)))
+    .replace(/&([a-z]+);/gi, (whole, /** @type {string} */ name) =>
+      name === "amp" ? whole : (NAMED_ENTITIES[name] ?? whole),
+    )
+    .replace(/&amp;/g, "&");
+}
+
+const INLINE_TAG = /^<\/?(a|code|em|strong|kbd|span|b|i|abbr|sup|sub|mark|small|var)\b[^>]*>$/i;
+
+/**
+ * Text of an HTML fragment: inline tags vanish, block tags become a space, entities are decoded.
+ * Repeated until nothing changes: removing one tag can join the pieces around it into another.
+ * @param {string} html
+ * @returns {string}
+ */
+export function stripTags(html) {
+  let text = html;
+  let previous;
+  do {
+    previous = text;
+    text = text.replace(/<[^<>]*>/g, (tag) => (INLINE_TAG.test(tag) ? "" : " "));
+  } while (text !== previous);
+  return decodeEntities(text).replace(/\s+/g, " ").trim();
+}
+
+/**
+ * @param {string} text
+ * @returns {string}
+ */
+export function slugify(text) {
+  const slug = stripTags(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/[\s-]+/g, "-");
+  return slug || "section";
+}
+
+/**
+ * The package version of a pubspec.yaml: its top-level `version:` line, without a `+build`
+ * suffix, which is not part of the version.
+ * @param {string} pubspec
+ * @returns {string}
+ */
+export function readVersion(pubspec) {
+  const match = /^version:[ \t]*([^+\s#]+)/m.exec(pubspec);
+  if (!match) throw new Error("pubspec.yaml: no package version found");
+  return /** @type {string} */ (match[1]);
+}
+
+/**
+ * @param {string} html
+ * @returns {Set<string>}
+ */
+function collectIds(html) {
+  /** @type {Set<string>} */
+  const ids = new Set();
+  const re = /\sid\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>"']+))/g;
+  let m;
+  while ((m = re.exec(html)) !== null) ids.add(/** @type {string} */ (m[1] ?? m[2] ?? m[3]));
+  return ids;
+}
+
+// ---------------------------------------------------------------------------
+// Front matter: <!-- page: title="…" track="start" order=1 summary="…" -->
+
+/**
+ * @param {string} source
+ * @param {string} [file]
+ * @returns {{ meta: { title: string, track: string, order: number, summary: string }, body: string }}
+ */
+export function parseFrontMatter(source, file = "page") {
+  const match = /^\s*<!--\s*page:([\s\S]*?)-->/.exec(source);
+  if (!match) throw new Error(`${file}: missing front matter (<!-- page: … -->)`);
+  /** @type {Record<string, string>} */
+  const meta = {};
+  const pair = /^([a-z]+)\s*=\s*(?:"([^"]*)"|([^\s"]+))(?:\s+|$)/;
+  let rest = /** @type {string} */ (match[1]).trim();
+  while (rest.length) {
+    const m = pair.exec(rest);
+    if (!m) {
+      throw new Error(
+        `${file}: cannot read front matter at "${rest.slice(0, 40)}": expected key="value" ` +
+          `pairs; a bare value is a single token, values with spaces must be quoted`,
+      );
+    }
+    const key = /** @type {string} */ (m[1]);
+    if (!FRONT_MATTER_KEYS.includes(key)) {
+      throw new Error(`${file}: unknown front-matter key "${key}"`);
+    }
+    meta[key] = /** @type {string} */ (m[2] ?? m[3]);
+    rest = rest.slice(m[0].length);
+  }
+  if (!meta.title) throw new Error(`${file}: front matter has no title`);
+  if (meta.track && !TRACKS.some((t) => t.id === meta.track)) {
+    throw new Error(`${file}: unknown track "${meta.track}"`);
+  }
+  const order = meta.order === undefined ? 0 : Number(meta.order);
+  if (Number.isNaN(order))
+    throw new Error(`${file}: order "${String(meta.order)}" is not a number`);
+  return {
+    meta: { title: meta.title, track: meta.track ?? "", order, summary: meta.summary ?? "" },
+    body: source.slice(match[0].length).trim(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Headings: ids, copy-link anchors, table of contents, section text.
+// One pass over the h2/h3 matches feeds the rendered HTML, the TOC and the
+// index sections, so they can never disagree about what a heading is.
+
+/**
+ * @param {string} body
+ * @returns {{ html: string, headings: Heading[], intro: string, sections: string[] }}
+ */
+export function processHeadings(body) {
+  /** @typedef {{ start: number, end: number, html: string }} HeadingMatch */
+  const used = collectIds(body); // authored ids on any element are never rewritten
+  /** @type {Set<string>} */
+  const emitted = new Set();
+  /** @type {Heading[]} */
+  const headings = [];
+  /** @type {HeadingMatch[]} */
+  const matches = [];
+  const re = /<(h[23])(\s[^>]*)?>([\s\S]*?)<\/\1>/g;
+  let m;
+  while ((m = re.exec(body)) !== null) {
+    const [whole, tagName, attrs = "", innerHtml] = m;
+    const tag = /** @type {string} */ (tagName);
+    const inner = /** @type {string} */ (innerHtml);
+    const text = stripTags(inner);
+    const authored = /\sid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))/.exec(attrs);
+    const base = authored
+      ? /** @type {string} */ (authored[1] ?? authored[2] ?? authored[3])
+      : slugify(text);
+    let id = base;
+    let n = 1;
+    // An authored id keeps its name unless an earlier heading already emitted
+    // it; a generated id must not collide with any id in the page.
+    while (authored ? emitted.has(id) : used.has(id)) id = `${base}-${String(++n)}`;
+    emitted.add(id);
+    used.add(id);
+    headings.push({ level: Number(tag[1]), id, text });
+    const rest = attrs.replace(/\sid\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>"']+)/, "");
+    const anchor =
+      `<a class="anchor" href="#${id}" aria-label="Copy link to ${escapeHtml(text)}" ` +
+      `title="Copy link to this section">#</a>`;
+    matches.push({
+      start: m.index,
+      end: m.index + whole.length,
+      html: `<${tag} id="${id}"${rest}>${inner}${anchor}</${tag}>`,
+    });
+  }
+  let html = "";
+  let cursor = 0;
+  /** @type {string[]} */
+  const sections = [];
+  for (let i = 0; i < matches.length; i++) {
+    const match = /** @type {HeadingMatch} */ (matches[i]);
+    html += body.slice(cursor, match.start) + match.html;
+    cursor = match.end;
+    const next =
+      i + 1 < matches.length ? /** @type {HeadingMatch} */ (matches[i + 1]).start : body.length;
+    sections.push(stripTags(body.slice(cursor, next)));
+  }
+  html += body.slice(cursor);
+  const intro = stripTags(
+    body.slice(0, matches.length ? /** @type {HeadingMatch} */ (matches[0]).start : body.length),
+  );
+  return { html, headings, intro, sections };
+}
+
+// ---------------------------------------------------------------------------
+// Pages, nav and search index
+
+/**
+ * @param {string} srcDir
+ * @returns {Page[]}
+ */
+export function loadPages(srcDir) {
+  /** @type {Page[]} */
+  const pages = [];
+  /** @type {(dir: string) => void} */
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "assets") walk(full);
+      } else if (entry.name.endsWith(".html")) {
+        const url = path.relative(srcDir, full).split(path.sep).join("/");
+        const { meta, body } = parseFrontMatter(fs.readFileSync(full, "utf8"), url);
+        pages.push({ ...meta, url, body });
+      }
+    }
+  };
+  walk(srcDir);
+  return sortPages(pages);
+}
+
+/**
+ * Landing page first, then tracks in order, then page order: the search index inherits this order and uses it to break ranking ties.
+ * @template {Pick<Page, "track" | "order" | "url">} T
+ * @param {T[]} pages
+ * @returns {T[]}
+ */
+export function sortPages(pages) {
+  const trackNo = (/** @type {string} */ id) => (id ? TRACKS.findIndex((t) => t.id === id) : -1);
+  return pages.sort(
+    (a, b) =>
+      trackNo(a.track) - trackNo(b.track) || a.order - b.order || a.url.localeCompare(b.url),
+  );
+}
+
+/**
+ * @param {(Pick<Page, "title" | "track" | "order" | "url"> & { summary?: string })[]} pages
+ * @returns {Nav}
+ */
+export function buildNav(pages) {
+  return TRACKS.map((track) => ({
+    ...track,
+    pages: pages
+      .filter((p) => p.track === track.id)
+      .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
+      .map(({ title, url, order, summary }) => ({ title, url, order, summary })),
+  }));
+}
+
+/**
+ * @param {(Pick<Page, "title" | "track" | "summary" | "url" | "body"> & { order?: number })[]} pages
+ * @returns {{ title: string, track: string, url: string, summary: string, intro: string, headings: { id: string, text: string, body: string }[] }[]}
+ */
+export function buildIndex(pages) {
+  const trackLabel = (/** @type {string} */ id) => TRACKS.find((t) => t.id === id)?.label ?? "";
+  return pages.map((page) => {
+    const { headings, intro, sections } = processHeadings(page.body);
+    return {
+      title: page.title,
+      track: trackLabel(page.track),
+      url: page.url,
+      summary: page.summary,
+      intro,
+      headings: headings.map((h, i) => ({ id: h.id, text: h.text, body: sections[i] ?? "" })),
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Rendering
+
+/**
+ * @param {string} url
+ * @returns {string}
+ */
+function relPrefix(url) {
+  const depth = url.split("/").length - 1;
+  return depth === 0 ? "" : "../".repeat(depth);
+}
+
+/**
+ * @param {Nav} nav
+ * @param {string} currentUrl
+ * @param {string} rel
+ * @returns {string}
+ */
+function renderNav(nav, currentUrl, rel) {
+  const link = (/** @type {NavPage} */ p) =>
+    `<li><a href="${rel}${p.url}"${p.url === currentUrl ? ' aria-current="page"' : ""}>${escapeHtml(p.title)}</a></li>`;
+  const home = `<a class="nav-home" href="${rel}index.html"${currentUrl === "index.html" ? ' aria-current="page"' : ""}>Overview</a>`;
+  const tracks = nav
+    .map(
+      (t) =>
+        `<section class="nav-track" aria-label="${escapeHtml(t.label)}"><p class="eyebrow">${escapeHtml(t.label)}</p>` +
+        (t.pages.length
+          ? `<ul>${t.pages.map(link).join("")}</ul>`
+          : `<p class="nav-empty">No chapters yet</p>`) +
+        `</section>`,
+    )
+    .join("");
+  return home + tracks;
+}
+
+/**
+ * @param {Heading[]} headings
+ * @returns {string}
+ */
+function renderToc(headings) {
+  if (!headings.length) return "";
+  const items = headings
+    .map(
+      (h) =>
+        `<li class="toc-l${String(h.level)}"><a href="#${h.id}">${escapeHtml(h.text)}</a></li>`,
+    )
+    .join("");
+  return `<aside class="toc" aria-label="Table of contents">\n<p class="eyebrow">On this page</p><ol>${items}</ol>\n</aside>\n`;
+}
+
+// ---------------------------------------------------------------------------
+// Versions: the site is published once per release, every release under
+// /vX.Y.Z/ and the latest one also at the root (build-site-all.js). Each entry
+// is { version, base, pages, latest }; `pages` lists the URLs that version has,
+// so the menu can send a reader to the same chapter where it exists and to the
+// start page where it does not, decided here and not by a 404 at read time.
+
+/**
+ * The URL of `pageUrl` in another version of the site, or of its start page when that version lacks the chapter.
+ * @param {VersionEntry} entry
+ * @param {string} pageUrl
+ * @returns {string}
+ */
+export function versionHref(entry, pageUrl) {
+  const target = pageUrl && entry.pages.includes(pageUrl) ? pageUrl : "index.html";
+  return `${entry.base}${target}`;
+}
+
+/**
+ * @param {string} version
+ * @param {VersionEntry[]} versions
+ * @param {string} currentUrl
+ * @returns {string}
+ */
+function renderVersionMenu(version, versions, currentUrl) {
+  const chip = `<span class="chip" title="avro version">v${escapeHtml(version)}</span>`;
+  if (!versions.length) return chip;
+  const items = versions
+    .map((entry) => {
+      const label = `v${escapeHtml(entry.version)}${entry.latest ? " (latest)" : ""}`;
+      return entry.version === version
+        ? `<li><span aria-current="true">${label}</span></li>`
+        : `<li><a href="${versionHref(entry, currentUrl)}">${label}</a></li>`;
+    })
+    .join("");
+  return (
+    `<details class="version-menu"><summary class="chip" title="Documentation version">v${escapeHtml(version)}</summary>` +
+    `<ul aria-label="Documentation versions">${items}</ul></details>`
+  );
+}
+
+/**
+ * A one-line pointer to the latest release on every page of an older one.
+ * @param {string} version
+ * @param {VersionEntry[]} versions
+ * @param {string} currentUrl
+ * @returns {string}
+ */
+function renderVersionNotice(version, versions, currentUrl) {
+  const latest = versions.find((entry) => entry.latest);
+  if (!latest || latest.version === version) return "";
+  return (
+    `<p class="version-notice">Documentation for v${escapeHtml(version)}. ` +
+    `<a href="${versionHref(latest, currentUrl)}">Read the latest, v${escapeHtml(latest.version)}</a>.</p>\n`
+  );
+}
+
+/**
+ * @param {object} options
+ * @param {string} options.title
+ * @param {string | undefined} options.summary
+ * @param {string} options.rel
+ * @param {string} options.root
+ * @param {Nav} options.nav
+ * @param {string} options.currentUrl
+ * @param {string} options.eyebrow
+ * @param {string} options.main
+ * @param {string} options.toc
+ * @param {string} options.version
+ * @param {VersionEntry[]} [options.versions]
+ * @param {string | null} [options.tag]
+ * @returns {string}
+ */
+function shell({
+  title,
+  summary,
+  rel,
+  root,
+  nav,
+  currentUrl,
+  eyebrow,
+  main,
+  toc,
+  version,
+  versions = [],
+  tag = null,
+}) {
+  const versionChip = `<span class="chip" title="avro version">v${escapeHtml(version)}</span>`;
+  const versionMenu = renderVersionMenu(version, versions, currentUrl);
+  const versionNotice = renderVersionNotice(version, versions, currentUrl);
+  return `<!doctype html>
+<html lang="en" data-root="${root}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)} — avro</title>
+${summary ? `<meta name="description" content="${escapeHtml(summary)}">\n` : ""}<script>try{var t=localStorage.getItem("avro-theme");if(t==="light"||t==="dark"){document.documentElement.setAttribute("data-theme",t)}}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="${FONTS_HREF}">
+<link rel="stylesheet" href="${rel}assets/site.css">
+<link rel="icon" href="${rel}assets/mark.svg" type="image/svg+xml">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<div class="sr-only" id="live" aria-live="polite" aria-atomic="true"></div>
+<header class="site-header">
+<button class="nav-toggle" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Open navigation"><span class="nav-toggle-bars" aria-hidden="true"></span></button>
+<a class="brand" href="${rel}index.html">${BRAND_MARK}<span class="brand-name">avro</span></a>
+${versionMenu}
+<div class="search" role="search">
+<input class="search-input" id="search" type="search" placeholder="Search docs" aria-label="Search documentation" role="combobox" aria-autocomplete="list" aria-controls="search-results" aria-expanded="false" autocomplete="off" spellcheck="false">
+<kbd class="search-kbd" aria-hidden="true">/</kbd>
+<ul class="search-results" id="search-results" role="listbox" aria-label="Search results" hidden></ul>
+</div>
+<button class="theme-toggle" type="button" aria-label="Switch to dark theme" title="Switch theme">
+<svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g></svg>
+<svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="currentColor"/></svg>
+</button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Documentation">
+${renderNav(nav, currentUrl, rel)}
+</nav>
+<main class="content" id="content" tabindex="-1">
+${versionNotice}${eyebrow ? `<p class="eyebrow track-eyebrow">${escapeHtml(eyebrow)}</p>\n` : ""}${main}
+</main>
+${toc}</div>
+<footer class="site-footer">
+<span>avro ${versionChip}</span>
+<nav aria-label="Project links"><a href="${REPO_URL}">GitHub</a><a href="${changelogUrl(tag)}">Changelog</a></nav>
+</footer>
+<script src="${rel}assets/site.js" defer></script>
+</body>
+</html>
+`;
+}
+
+/**
+ * @param {{ title: string, url: string, body: string, track?: string, summary?: string, order?: number }} page
+ * @param {RenderContext} context
+ * @returns {string}
+ */
+export function renderPage(page, { nav, version, versions = [], tag = null }) {
+  const rel = relPrefix(page.url);
+  const { html, headings } = processHeadings(page.body);
+  const body = html
+    .replace(/<table(\s[^>]*)?>[\s\S]*?<\/table>/g, (t) => `<div class="table-wrap">${t}</div>`)
+    // Prose links the changelog of summer; a release's pages point at its own.
+    .replaceAll(changelogUrl(null), changelogUrl(tag));
+  const track = TRACKS.find((t) => t.id === page.track);
+  const main = `<h1>${escapeHtml(page.title)}</h1>\n${body}`;
+  return shell({
+    title: page.title,
+    summary: page.summary,
+    rel,
+    root: rel || "./",
+    nav,
+    currentUrl: page.url,
+    eyebrow: track ? track.label : "",
+    main,
+    toc: renderToc(headings),
+    version,
+    versions,
+    tag,
+  });
+}
+
+/**
+ * @param {RenderContext & { base?: string }} context
+ * @returns {string}
+ */
+export function render404({ nav, version, versions = [], tag = null, base = "/" }) {
+  const main = `<h1>Page not found</h1>
+<p class="lede">There is nothing at this address. The chapter may have moved, or the link was older than the site.</p>
+<p>Try the search box above (press <kbd>/</kbd>) or start from the <a href="${base}index.html">overview</a>.</p>`;
+  return shell({
+    title: "Page not found",
+    summary: "",
+    rel: base,
+    root: base,
+    nav,
+    currentUrl: "",
+    eyebrow: "404",
+    main,
+    toc: "",
+    version,
+    versions,
+    tag,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Link check
+
+const ATTR_LINK = /\s(?:xlink:)?(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))/g;
+const SRCSET = /\ssrcset\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+const CSS_URL = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)"'\s]+))\s*\)/g;
+
+/**
+ * Every link (href or xlink:href, also inside inline SVG, src, srcset candidates, CSS url()) in one output file.
+ * @param {string} file
+ * @param {string} content
+ * @returns {string[]}
+ */
+export function extractLinks(file, content) {
+  /** @type {string[]} */
+  const links = [];
+  if (file.endsWith(".css")) {
+    for (const m of content.matchAll(CSS_URL)) {
+      links.push(/** @type {string} */ (m[1] ?? m[2] ?? m[3]).trim());
+    }
+    return links;
+  }
+  if (!file.endsWith(".html")) return links;
+  for (const m of content.matchAll(ATTR_LINK))
+    links.push(/** @type {string} */ (m[1] ?? m[2] ?? m[3]));
+  for (const m of content.matchAll(SRCSET)) {
+    for (const candidate of /** @type {string} */ (m[1] ?? m[2]).split(",")) {
+      const url = candidate.trim().split(/\s+/)[0];
+      if (url) links.push(url);
+    }
+  }
+  return links;
+}
+
+const EXTERNAL = /^(https?:|mailto:|data:|tel:)/i;
+
+/**
+ * files: Map<relativePath, content> of every output file. HTML and CSS files
+ * are scanned; every file is a valid target. Root-relative links must start
+ * with the base, or name a file of another version of the site listed in
+ * `knownTargets` (root-relative paths). Throws on the first broken link or
+ * anchor, naming the file and the link.
+ * @param {Map<string, string>} files
+ * @param {{ base?: string, knownTargets?: Set<string> }} [options]
+ */
+export function checkLinks(files, { base = "/", knownTargets = new Set() } = {}) {
+  /** @type {Map<string, Set<string>>} */
+  const ids = new Map();
+  for (const [file, html] of files) if (file.endsWith(".html")) ids.set(file, collectIds(html));
+  const asIndex = (/** @type {string} */ target) => `${target.replace(/\/$/, "")}/index.html`;
+  const exists = (/** @type {string} */ target) => files.has(target) || files.has(asIndex(target));
+  for (const [file, content] of files) {
+    for (const link of extractLinks(file, content)) {
+      if (EXTERNAL.test(link)) continue;
+      const hashAt = link.indexOf("#");
+      const fragment = hashAt >= 0 ? link.slice(hashAt + 1) : "";
+      let target = hashAt >= 0 ? link.slice(0, hashAt) : link;
+      const queryAt = target.indexOf("?");
+      if (queryAt >= 0) target = target.slice(0, queryAt);
+      if (target.startsWith("/")) {
+        if (knownTargets.has(target)) continue; // a file of another version
+        if (!target.startsWith(base)) {
+          throw new Error(`Broken link in ${file}: "${link}" is outside the site base ${base}`);
+        }
+        target = target.slice(base.length) || "index.html";
+      } else if (target) {
+        target = path.posix.normalize(path.posix.join(path.posix.dirname(file), target));
+        if (target === "." || target === "./") target = "index.html";
+      }
+      let resolved = target || file;
+      if (target) {
+        if (!exists(resolved)) {
+          throw new Error(
+            `Broken link in ${file}: "${link}" does not resolve to a file in the output`,
+          );
+        }
+        if (!files.has(resolved)) resolved = asIndex(resolved);
+      }
+      if (fragment && !ids.get(resolved)?.has(fragment)) {
+        throw new Error(
+          `Broken link in ${file}: "${link}" points to a missing anchor #${fragment}`,
+        );
+      }
+    }
+  }
+}
+
+// Authored pages must not use root-relative links: on GitHub Pages the site
+// lives under /<repo>/, so "/start/x.html" breaks there however it looks locally.
+/** @param {Pick<Page, "url" | "body">} page */
+function rejectRootRelativeLinks(page) {
+  for (const link of extractLinks(page.url, page.body)) {
+    if (link.startsWith("/")) {
+      throw new Error(
+        `Broken link in ${page.url}: "${link}" is root-relative; the site is served under a ` +
+          `path on GitHub Pages, use a relative link`,
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Build
+
+/**
+ * @param {string} from
+ * @param {string} to
+ * @param {string[]} files
+ */
+function copyDir(from, to, files) {
+  fs.mkdirSync(to, { recursive: true });
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    const src = path.join(from, entry.name);
+    const dst = path.join(to, entry.name);
+    if (entry.isDirectory()) copyDir(src, dst, files);
+    else {
+      fs.copyFileSync(src, dst);
+      files.push(dst);
+    }
+  }
+}
+
+/** @type {(dir: string, parent: string) => boolean} */
+const isInside = (dir, parent) => {
+  const rel = path.relative(parent, dir);
+  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+};
+
+/**
+ * The output folder is wiped; refuse anything that is not clearly a build output.
+ * @param {string} outDir
+ * @param {string} srcDir
+ */
+function guardOutDir(outDir, srcDir) {
+  const tmp = fs.realpathSync(os.tmpdir());
+  const out = path.resolve(outDir);
+  if (!isInside(out, REPO_ROOT) && !isInside(out, tmp)) {
+    throw new Error(
+      `Refusing to wipe ${out}: the output folder must be inside the repository or the temp dir`,
+    );
+  }
+  const src = path.resolve(srcDir);
+  if (out === src || isInside(src, out)) {
+    throw new Error(`Refusing to wipe ${out}: it contains the source folder ${src}`);
+  }
+}
+
+/**
+ * Every page of one version of the site, in nav order and checked: the list a
+ * build renders, and what build-site-all.js reads ahead of rendering so the
+ * version menu knows which chapters exist where.
+ * @param {CollectOptions} [options]
+ * @returns {Page[]}
+ */
+export function collectPages({ srcDir = path.join(REPO_ROOT, "site") } = {}) {
+  const pages = loadPages(srcDir);
+  if (!pages.some((p) => p.url === "index.html")) throw new Error(`${srcDir}: no index.html`);
+  for (const page of pages) rejectRootRelativeLinks(page);
+  return pages;
+}
+
+/**
+ * Builds one version of the site. `pages` skips collecting them again when the
+ * caller already did; `tag` is the release the sources came from (changelog
+ * links point at it); `versions` fills the version menu and `knownTargets`
+ * lists the root-relative paths of the other versions the menu links to.
+ * Assets (CSS, JS, icons) come from `assetsDir`, which may belong to a newer
+ * tree than the pages: the menu and notice need today's styles.
+ * @param {BuildOptions} [options]
+ * @returns {{ pages: number, outDir: string, version: string }}
+ */
+export function buildSite({
+  srcDir = path.join(REPO_ROOT, "site"),
+  outDir = path.join(REPO_ROOT, "site-dist"),
+  version = readVersion(fs.readFileSync(path.join(REPO_ROOT, "pubspec.yaml"), "utf8")),
+  base = "/",
+  assetsDir = path.join(srcDir, "assets"),
+  pages = null,
+  tag = null,
+  versions = [],
+  knownTargets = new Set(),
+} = {}) {
+  if (!base.startsWith("/") || !base.endsWith("/")) {
+    throw new Error(`--base must start and end with "/": got "${base}"`);
+  }
+  guardOutDir(outDir, srcDir);
+  pages ??= collectPages({ srcDir });
+  const nav = buildNav(pages);
+  const ctx = { nav, version, base, versions, tag };
+
+  fs.rmSync(outDir, { recursive: true, force: true });
+  fs.mkdirSync(outDir, { recursive: true });
+
+  /** @type {Map<string, string>} */
+  const files = new Map();
+  for (const page of pages) files.set(page.url, renderPage(page, ctx));
+  files.set("404.html", render404(ctx));
+
+  /** @type {string[]} */
+  const copied = [];
+  if (fs.existsSync(assetsDir)) copyDir(assetsDir, path.join(outDir, "assets"), copied);
+  for (const file of copied) {
+    const rel = path.relative(outDir, file).split(path.sep).join("/");
+    if (!files.has(rel)) files.set(rel, fs.readFileSync(file, "utf8"));
+  }
+
+  checkLinks(files, { base, knownTargets });
+
+  for (const [rel, html] of files) {
+    if (!rel.endsWith(".html")) continue;
+    const dest = path.join(outDir, rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, html);
+  }
+  fs.writeFileSync(
+    path.join(outDir, "search-index.json"),
+    JSON.stringify(buildIndex(pages), null, 0),
+  );
+  fs.writeFileSync(path.join(outDir, ".nojekyll"), "");
+  return { pages: pages.length, outDir, version };
+}
+
+// ---------------------------------------------------------------------------
+// Preview server
+
+/** @type {Record<string, string>} */
+const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".txt": "text/plain; charset=utf-8",
+};
+
+/**
+ * Resolves a request path to a file under root, or null when it escapes or is missing.
+ * @param {string} root
+ * @param {string} urlPath
+ * @returns {string | null}
+ */
+export function resolveRequest(root, urlPath) {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(urlPath);
+  } catch {
+    return null;
+  }
+  const base = path.resolve(root);
+  let file = path.resolve(base, `.${decoded}`);
+  if (file !== base && !file.startsWith(base + path.sep)) return null;
+  if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, "index.html");
+  return fs.existsSync(file) ? file : null;
+}
+
+/**
+ * @param {string} outDir
+ * @param {number} port
+ * @param {string} [host]
+ * @returns {http.Server}
+ */
+export function serve(outDir, port, host = "127.0.0.1") {
+  const root = path.resolve(outDir);
+  const server = http.createServer((req, res) => {
+    const urlPath = new URL(/** @type {string} */ (req.url), "http://localhost").pathname;
+    let file = resolveRequest(root, urlPath);
+    let status = 200;
+    if (!file) {
+      file = path.join(root, "404.html");
+      status = 404;
+    }
+    res.writeHead(status, {
+      "content-type": MIME[path.extname(file)] ?? "application/octet-stream",
+    });
+    fs.createReadStream(file).pipe(res);
+  });
+  server.listen(port, host, () => {
+    const { port: bound } = /** @type {import("node:net").AddressInfo} */ (server.address());
+    console.log(`Serving ${root} at http://${host}:${String(bound)}/ (Ctrl+C to stop)`);
+  });
+  return server;
+}
+
+// ---------------------------------------------------------------------------
+// CLI
+
+/**
+ * @param {string[]} argv
+ * @returns {{ serve: boolean, port: number, srcDir?: string, outDir?: string, base?: string | undefined }}
+ */
+function parseArgs(argv) {
+  /** @type {ReturnType<typeof parseArgs>} */
+  const opts = { serve: false, port: 8080 };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--serve") {
+      opts.serve = true;
+      if (/^\d+$/.test(argv[i + 1] ?? "")) opts.port = Number(argv[++i]);
+    } else if (arg === "--src") opts.srcDir = path.resolve(/** @type {string} */ (argv[++i]));
+    else if (arg === "--out") opts.outDir = path.resolve(/** @type {string} */ (argv[++i]));
+    else if (arg === "--base") opts.base = argv[++i];
+    else throw new Error(`Unknown argument: ${String(arg)}`);
+  }
+  return opts;
+}
+
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  try {
+    const opts = parseArgs(process.argv.slice(2));
+    const result = buildSite(opts);
+    console.log(`Built ${String(result.pages)} pages (v${result.version}) into ${result.outDir}`);
+    if (opts.serve) serve(result.outDir, opts.port);
+  } catch (err) {
+    console.error(`build-site: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+}

@@ -2,8 +2,17 @@
 # stack workflow writes coverage/<name>.lcov; CI fails below the floor. Run the ratchet without
 # --check locally after a rise; it raises the floor to the measured value minus 0.1 and writes
 # .github/badges/coverage-<name>.json. Commit both with the change that earned them.
+#
+# site: the documentation site build in scripts/, measured by the site tests
+# (`npm run test:coverage` writes coverage/lcov.info, which the shared TypeScript gate copies
+# to coverage/site.lcov).
 
 [[parts]]
 name = "dart"
 lcov = "coverage/dart.lcov"
+floor = 0.00
+
+[[parts]]
+name = "site"
+lcov = "coverage/site.lcov"
 floor = 0.00

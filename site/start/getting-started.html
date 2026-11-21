@@ -1,0 +1,102 @@
+<!-- page: title="Getting started" track="start" order=1 summary="Add the dependency, parse a schema, encode and decode a record, write and read a container file: avro in five minutes." -->
+<p class="lede">
+  Five minutes, four steps: add the package, parse a schema, encode and decode a record, and
+  write and read a container file. The examples build on each other; put them in one
+  <code>main()</code> in that order.
+</p>
+
+<h2>Add the dependency</h2>
+<p>
+  The package needs Dart 3.13 or later and runs on the Dart VM and AOT, not on Flutter web. Add it
+  to the <code>dependencies</code> of your <code>pubspec.yaml</code>:
+</p>
+<pre><code>dependencies:
+  avro: ^0.1.0</code></pre>
+<p>Run <code>dart pub get</code>, or <code>flutter pub get</code> in a Flutter app, and import the one library:</p>
+<pre><code>import 'package:avro/avro.dart';</code></pre>
+
+<h2>Parse a schema</h2>
+<p>
+  A schema is JSON text. <code>Schema.parse</code> reads it into an immutable tree, and throws
+  <code>SchemaParseException</code> if the text is not a valid Avro schema.
+</p>
+<pre><code>final schema = Schema.parse('''
+{
+  "type": "record",
+  "name": "User",
+  "namespace": "com.example",
+  "fields": [
+    {"name": "name", "type": "string"},
+    {"name": "age", "type": "int"},
+    {"name": "email", "type": ["null", "string"], "default": null}
+  ]
+}
+''');</code></pre>
+
+<h2>Encode and decode a record</h2>
+<p>
+  An <code>AvroCodec</code> encodes and decodes the values of one schema. A record is a
+  <code>Map&lt;String, Object?&gt;</code> with one entry per field. Every field must be there, even
+  one with a default.
+</p>
+<pre><code>final codec = AvroCodec(writer: schema);
+
+final bytes = codec.encode({'name': 'Ada', 'age': 36, 'email': null});
+// bytes is a Uint8List: [6, 65, 100, 97, 72, 0]
+
+final user = codec.decode(bytes) as Map&lt;String, Object?&gt;;
+print(user['name']); // Ada</code></pre>
+<p>
+  <code>encode</code> throws <code>EncodeException</code> if the value does not fit the schema. The
+  exception names the place in the value: <code>$.age</code> if <code>age</code> is not an
+  <code>int</code>. <code>decode</code> throws
+  <code>DecodeException</code> if the bytes are not a valid encoding, or if bytes are left over
+  after the value.
+</p>
+<p>
+  The <code>email</code> field is a union of <code>null</code> and <code>string</code>. The codec
+  picks the branch from the value: <code>null</code> or a <code>String</code>. When more than one
+  branch fits a value, you name the branch; <a href="concepts.html#unions-and-branch">Concepts</a>
+  shows how.
+</p>
+
+<h2>Write and read a container file</h2>
+<p>
+  A container file holds many records of one schema, with the schema in its header. Other Avro
+  libraries read and write the same files. <code>AvroFileWriter</code> writes one in memory;
+  <code>close</code> returns its bytes.
+</p>
+<pre><code>final writer = AvroFileWriter(codec, compression: 'deflate');
+writer.add({'name': 'Ada', 'age': 36, 'email': 'ada@example.com'});
+writer.add({'name': 'Alan', 'age': 41, 'email': null});
+final Uint8List file = writer.close();</code></pre>
+<p>
+  <code>Uint8List</code> comes from <code>dart:typed_data</code>. To store the file, write the
+  bytes, for example with <code>File('users.avro').writeAsBytesSync(file)</code> from
+  <code>dart:io</code>.
+</p>
+<p>
+  <code>AvroFileReader</code> reads the header at once. <code>records()</code> decodes the
+  records lazily, one block at a time, with the schema stored in the file.
+</p>
+<pre><code>final reader = AvroFileReader(file);
+print(reader.header.compression); // deflate
+
+for (final record in reader.records()) {
+  print(record);
+}
+// {name: Ada, age: 36, email: ada@example.com}
+// {name: Alan, age: 41, email: null}</code></pre>
+
+<h2>Next steps</h2>
+<ul>
+  <li>
+    <a href="concepts.html">Concepts</a> explains the model behind these calls: writer and reader
+    schema, unions, logical types, fingerprints and limits.
+  </li>
+  <li><a href="glossary.html">Glossary</a> defines every term in one or two sentences.</li>
+  <li>
+    The <a href="https://pub.dev/documentation/avro/latest/">API reference</a> on pub.dev lists
+    every class and member.
+  </li>
+</ul>

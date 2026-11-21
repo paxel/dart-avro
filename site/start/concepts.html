@@ -1,0 +1,286 @@
+<!-- page: title="Concepts" track="start" order=2 summary="The model behind avro: writer and reader schema, the codec, generic values, unions and Branch, logical types, container files, single-object encoding, fingerprints and limits." -->
+<p class="lede">
+  The ideas behind the calls of <a href="getting-started.html">Getting started</a>, one section
+  each. The terms are defined in the <a href="glossary.html">Glossary</a>.
+</p>
+
+<h2>Writer and reader schema</h2>
+<p>
+  Avro data carries no field names and no types. To read it, you need the schema it was written
+  with: the <a href="glossary.html#writer-schema">writer schema</a>. If your code expects another
+  shape, for example a newer version of the record, you also give the
+  <a href="glossary.html#reader-schema">reader schema</a>. The writer schema is then
+  <a href="glossary.html#resolution">resolved</a> against the reader schema, by the rules of the
+  Avro specification: fields are matched by name, a field the reader adds takes its default, a
+  field the reader drops is skipped, and an <code>int</code> can be read as a <code>long</code>.
+</p>
+<pre><code>final v1 = Schema.parse('''
+{"type": "record", "name": "User", "namespace": "com.example",
+ "fields": [{"name": "name", "type": "string"}, {"name": "age", "type": "int"}]}
+''');
+final v2 = Schema.parse('''
+{"type": "record", "name": "User", "namespace": "com.example",
+ "fields": [{"name": "name", "type": "string"}, {"name": "age", "type": "long"},
+            {"name": "email", "type": ["null", "string"], "default": null}]}
+''');
+
+final old = AvroCodec(writer: v1).encode({'name': 'Ada', 'age': 36});
+
+final upgrade = AvroCodec(writer: v1, reader: v2);
+print(upgrade.decode(old)); // {name: Ada, age: 36, email: null}</code></pre>
+<p>
+  Defaults serve resolution only. When you encode, every field of the record must be in the map,
+  even one with a default.
+</p>
+
+<h2>The codec</h2>
+<p>
+  An <code>AvroCodec</code> is made for one writer schema and, optionally, one reader schema. It
+  works out the resolution once, when it is made, and throws <code>ResolutionException</code>
+  there if the two schemas do not resolve. Make one codec per pair of schemas and keep it.
+</p>
+<ul>
+  <li><code>encode(value)</code> always writes with the writer schema and returns a <code>Uint8List</code>.</li>
+  <li>
+    <code>decode(bytes)</code> reads one value of the writer schema and returns it in the shape of
+    the reader schema, as an <code>Object?</code>. Bytes left over after the value are an error.
+  </li>
+</ul>
+<p>
+  In this package, "codec" means this object only. What the Avro specification calls a file's
+  codec, <code>null</code> or <code>deflate</code>, is called
+  <a href="glossary.html#compression">compression</a> here.
+</p>
+
+<h2>Generic values</h2>
+<p>
+  Values are plain Dart objects; there are no generated classes. <code>encode</code> accepts, and
+  <code>decode</code> returns:
+</p>
+<table>
+  <thead>
+    <tr><th>Avro type</th><th>Dart value</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>null</code></td><td><code>null</code></td></tr>
+    <tr><td><code>boolean</code></td><td><code>bool</code></td></tr>
+    <tr><td><code>int</code></td><td><code>int</code>, within 32 bits</td></tr>
+    <tr><td><code>long</code></td><td><code>int</code></td></tr>
+    <tr><td><code>float</code>, <code>double</code></td><td><code>double</code></td></tr>
+    <tr><td><code>bytes</code></td><td><code>Uint8List</code></td></tr>
+    <tr><td><code>string</code></td><td><code>String</code></td></tr>
+    <tr><td><code>record</code></td><td><code>Map&lt;String, Object?&gt;</code>, one entry per field</td></tr>
+    <tr><td><code>enum</code></td><td><code>String</code>, the symbol</td></tr>
+    <tr><td><code>array</code></td><td><code>List&lt;Object?&gt;</code></td></tr>
+    <tr><td><code>map</code></td><td><code>Map&lt;String, Object?&gt;</code></td></tr>
+    <tr><td><code>fixed</code></td><td><code>Uint8List</code> of the schema's size</td></tr>
+    <tr><td>union</td><td>the value of its branch; see <a href="#unions-and-branch">Unions and Branch</a></td></tr>
+  </tbody>
+</table>
+<p>
+  A record map must hold exactly the record's fields: a missing field or a key that names no field
+  throws <code>EncodeException</code>.
+</p>
+
+<h2 id="unions-and-branch">Unions and <code>Branch</code></h2>
+<p>
+  A value of a union belongs to one of its <a href="glossary.html#branch">branches</a>. When you
+  encode, the codec looks for the branches the value fits. If exactly one fits, it takes that one.
+  The common optional field <code>["null", "string"]</code> needs nothing more: <code>null</code>
+  and a <code>String</code> each fit one branch.
+</p>
+<p>
+  If more than one branch fits, you name the branch with <code>Branch(name, value)</code>. The name
+  is the full name of a named type, such as <code>com.example.User</code>, or the type name of any
+  other, such as <code>long</code> or <code>map</code>.
+</p>
+<pre><code>final number = AvroCodec(writer: Schema.parse('["int", "long"]'));
+
+number.encode(1);
+// EncodeException at $: more than one branch fits; wrap the value in a Branch of one of int, long
+
+final bytes = number.encode(const Branch('long', 1));
+print(number.decode(bytes)); // 1</code></pre>
+<p>
+  <code>decode</code> returns the plain value, never a <code>Branch</code>. A union of two records
+  with the same fields therefore cannot be told apart after decoding.
+</p>
+
+<h2>Logical types</h2>
+<p>
+  A logical type gives an underlying type a meaning, such as a date on an <code>int</code>. Every
+  logical type of Avro 1.12 decodes to a Dart value. Where Dart has no fitting type, the package
+  brings its own class.
+</p>
+<table>
+  <thead>
+    <tr><th>Logical type</th><th>Dart value</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>uuid</code> (on <code>string</code> or <code>fixed</code> of 16)</td><td><code>String</code> of 36 characters</td></tr>
+    <tr><td><code>time-millis</code>, <code>time-micros</code></td><td><code>Duration</code> since midnight</td></tr>
+    <tr><td><code>timestamp-millis</code>, <code>timestamp-micros</code></td><td><code>DateTime</code> in UTC</td></tr>
+    <tr><td><code>timestamp-nanos</code></td><td><code>AvroTimestampNanos</code>: nanoseconds since the epoch</td></tr>
+    <tr><td><code>date</code></td><td><code>AvroDate</code>: year, month, day</td></tr>
+    <tr><td><code>local-timestamp-millis</code>, <code>-micros</code>, <code>-nanos</code></td><td><code>AvroLocalTimestamp</code>: wall-clock fields, no time zone</td></tr>
+    <tr><td><code>decimal</code>, <code>big-decimal</code></td><td><code>AvroDecimal</code>: an unscaled <code>BigInt</code> and a scale</td></tr>
+    <tr><td><code>duration</code></td><td><code>AvroDuration</code>: months, days, milliseconds</td></tr>
+  </tbody>
+</table>
+<pre><code>final event = AvroCodec(writer: Schema.parse('''
+{"type": "record", "name": "Event", "fields": [
+  {"name": "at", "type": {"type": "long", "logicalType": "timestamp-millis"}},
+  {"name": "day", "type": {"type": "int", "logicalType": "date"}},
+  {"name": "price",
+   "type": {"type": "bytes", "logicalType": "decimal", "precision": 9, "scale": 2}}
+]}
+'''));
+
+final bytes = event.encode({
+  'at': DateTime.utc(2026, 11, 21, 9, 30),
+  'day': const AvroDate(2026, 11, 21),
+  'price': AvroDecimal(BigInt.from(1999), 2), // 19.99
+});</code></pre>
+<p>
+  A logical type the package does not know, or one that does not fit its underlying type, is read
+  as the underlying type, as the specification says.
+</p>
+
+<h2>Container files</h2>
+<p>
+  A <a href="glossary.html#container-file">container file</a> starts with a
+  <a href="glossary.html#header">header</a>: the magic bytes, the
+  <a href="glossary.html#metadata">metadata</a> and a 16-byte
+  <a href="glossary.html#sync-marker">sync marker</a>. The metadata holds the writer schema as
+  JSON text. <a href="glossary.html#block">Blocks</a> of records follow, each one compressed on its
+  own and ended by the sync marker.
+</p>
+<ul>
+  <li>
+    <code>AvroFileWriter(codec, compression:, metadata:, syncMarker:, schemaJson:)</code> writes a
+    file in memory. <code>add</code> adds a record, <code>flush</code> ends the current block, and
+    <code>close</code> ends the last block and returns the file as a <code>Uint8List</code>. A
+    block also ends by itself at 64 KiB before compression.
+  </li>
+  <li>
+    Your <code>metadata</code> comes first in the header, in your order, then
+    <code>avro.codec</code> and <code>avro.schema</code>. Keys that start with <code>avro.</code>
+    are reserved.
+  </li>
+  <li>
+    <code>AvroFileReader(bytes, limits:)</code> reads the header when it is made:
+    <code>header.metadata</code>, <code>header.schemaJson</code>,
+    <code>header.compression</code> and <code>header.syncMarker</code>.
+  </li>
+  <li>
+    <code>records()</code> returns a lazy <code>Iterable</code> that decompresses one block at a
+    time and decodes it with the file's own schema. <code>records(codec)</code> decodes with a
+    codec you choose, for example one that resolves the file's schema against yours.
+  </li>
+</ul>
+<pre><code>final reader = AvroFileReader(bytes);
+final codec = AvroCodec(
+  writer: Schema.parse(reader.header.schemaJson),
+  reader: mySchema,
+);
+for (final record in reader.records(codec)) {
+  // each record in the shape of mySchema
+}</code></pre>
+<p>
+  The compressions are <code>null</code> and <code>deflate</code>. A file compressed in any other
+  way throws <code>UnsupportedCompressionException</code> when the reader is made. The whole file
+  is held in memory while it is read; of its decompressed records, only one block at a time.
+</p>
+
+<h2>Single-object encoding</h2>
+<p>
+  Single-object encoding puts a 10-byte <a href="glossary.html#single-object-header">header</a>
+  in front of one value: the marker <code>C3 01</code> and the CRC-64-AVRO fingerprint of the
+  writer schema. A receiver can then tell which schema a message was written with.
+</p>
+<pre><code>final message = codec.encodeSingleObject({'name': 'Ada', 'age': 36, 'email': null});
+
+// The receiver keeps one codec per schema it accepts, keyed by fingerprint.
+final codecs = {codec.writer.crc64: codec};
+
+final header = SingleObjectHeader.parse(message);
+final chosen = codecs[header.fingerprint];
+if (chosen == null) throw StateError('unknown schema');
+print(chosen.decodeSingleObject(message)); // {name: Ada, age: 36, email: null}</code></pre>
+<p>
+  <code>decodeSingleObject</code> throws <code>DecodeException</code> if the header is missing or
+  names another schema than the codec's writer schema. Which fingerprints to accept is your
+  decision; the package does not keep a registry.
+</p>
+
+<h2>Fingerprints</h2>
+<p>
+  The <a href="glossary.html#canonical-form">canonical form</a> of a schema is its Parsing
+  Canonical Form: full names, no documentation, no aliases, no defaults and no other attributes.
+  Schemas that differ only in those have the same canonical form. A
+  <a href="glossary.html#fingerprint">fingerprint</a> is a hash of it.
+</p>
+<pre><code>print(schema.canonicalForm);
+// {"name":"com.example.User","type":"record","fields":[{"name":"name","type":"string"},...]}
+
+final int crc = schema.crc64;            // CRC-64-AVRO, the 64-bit pattern in an int
+final Uint8List wire = crc64ToBytes(crc); // the 8 little-endian bytes Avro writes
+final Uint8List md5 = schema.md5;         // 16 bytes
+final Uint8List sha256 = schema.sha256;   // 32 bytes</code></pre>
+<p>
+  The CRC-64-AVRO fingerprint is an <code>int</code>, so it can be a map key as it is. It holds the
+  64-bit pattern, as Java's <code>long</code> does, so it is often negative.
+  <code>crc64FromBytes</code> turns 8 bytes back into the <code>int</code>.
+</p>
+
+<h2>Limits</h2>
+<p>
+  Avro data from an untrusted sender can be crafted to make a reader allocate or decompress far
+  more than it holds. <code>AvroLimits</code> bounds that. The defaults are on, and finite:
+</p>
+<table>
+  <thead>
+    <tr><th>Field</th><th>Default</th><th>Bounds</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>maxBlockBytes</code></td><td>64 MiB</td><td>One block of a container file after decompression</td></tr>
+    <tr><td><code>maxTotalBytes</code></td><td>1 GiB</td><td>All blocks of a container file together after decompression</td></tr>
+    <tr><td><code>maxSchemaBytes</code></td><td>1 MiB</td><td>The JSON text of one schema, in UTF-8 bytes</td></tr>
+    <tr><td><code>maxSchemaDepth</code></td><td>64</td><td>The nesting depth of a schema's JSON text</td></tr>
+    <tr><td><code>maxValueDepth</code></td><td>1024</td><td>The nesting depth of one value</td></tr>
+    <tr><td><code>maxZeroSizeItems</code></td><td>1,048,576</td><td>The items of one array or map whose items take zero bytes, such as an array of <code>null</code></td></tr>
+  </tbody>
+</table>
+<p>
+  <code>Schema.parse</code>, <code>AvroCodec</code> and <code>AvroFileReader</code> each take a
+  <code>limits:</code> argument. A field set to <code>null</code> means no limit;
+  <code>AvroLimits.none</code> turns them all off. Input over a limit throws
+  <code>LimitExceededException</code>, whose <code>limit</code> names the field.
+</p>
+<pre><code>const strict = AvroLimits(
+  maxBlockBytes: 16 * 1024 * 1024,
+  maxTotalBytes: 256 * 1024 * 1024,
+);
+final reader = AvroFileReader(bytes, limits: strict);</code></pre>
+<p>
+  Some checks are always on, whatever the limits: a declared length or count is checked against
+  the remaining input before anything is allocated, negative lengths are rejected, and strings
+  must be well-formed UTF-8.
+</p>
+<p>
+  Every failure of the package is an <code>AvroException</code>. The class is sealed, so a
+  <code>switch</code> over it covers each cause:
+</p>
+<pre><code>try {
+  // parse, encode, decode or read
+} on AvroException catch (e) {
+  final reason = switch (e) {
+    SchemaParseException() =&gt; 'not a valid schema',
+    ResolutionException() =&gt; 'the schemas do not resolve',
+    DecodeException() =&gt; 'not a valid encoding',
+    EncodeException() =&gt; 'the value does not fit the schema',
+    LimitExceededException(:final limit) =&gt; 'over the limit $limit',
+    UnsupportedCompressionException(:final compression) =&gt; 'cannot read $compression',
+  };
+  print(reason);
+}</code></pre>

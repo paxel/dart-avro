@@ -20,4 +20,4 @@ jobs:
       contents: read
       security-events: write
     with:
-      languages: '[]'
+      languages: '["javascript-typescript"]'

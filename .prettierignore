@@ -1,0 +1,20 @@
+# Prettier checks the JavaScript, the JSON and the configuration files of the documentation
+# site. It also skips what .gitignore names.
+
+package-lock.json
+# Written by the coverage ratchet of paxel/gates.
+.github/badges/
+
+# The test data and the interop cases of the Dart package: their bytes are what the tests
+# compare against, so no formatter touches them.
+test/data/
+tool/
+
+# Markdown and YAML keep the layout they are written in: the tables with aligned pipes and the
+# aligned comments, which prettier would rewrite.
+*.md
+*.yml
+*.yaml
+
+# The page fragments in site/: reformatting them would change every line.
+*.html
