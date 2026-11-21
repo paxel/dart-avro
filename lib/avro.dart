@@ -2,7 +2,18 @@
 /// fingerprints and object container files.
 library;
 
-export 'src/codec.dart' show AvroCodec;
+export 'src/codec.dart' show AvroCodec, Branch;
 export 'src/exceptions.dart';
 export 'src/limits.dart';
-export 'src/schema.dart' show PrimitiveSchema, Schema;
+export 'src/schema.dart'
+    show
+        ArraySchema,
+        EnumSchema,
+        Field,
+        FixedSchema,
+        MapSchema,
+        NamedSchema,
+        PrimitiveSchema,
+        RecordSchema,
+        Schema,
+        UnionSchema;

@@ -10,6 +10,8 @@ final class AvroLimits {
     this.maxTotalBytes = 1024 * 1024 * 1024,
     this.maxSchemaBytes = 1024 * 1024,
     this.maxSchemaDepth = 64,
+    this.maxValueDepth = 1024,
+    this.maxZeroSizeItems = 1024 * 1024,
   });
 
   /// No limits beyond the checks that are always on.
@@ -18,6 +20,8 @@ final class AvroLimits {
     maxTotalBytes: null,
     maxSchemaBytes: null,
     maxSchemaDepth: null,
+    maxValueDepth: null,
+    maxZeroSizeItems: null,
   );
 
   /// The size of one data block of a container file after decompression.
@@ -31,4 +35,11 @@ final class AvroLimits {
 
   /// The nesting depth of a schema's JSON text.
   final int? maxSchemaDepth;
+
+  /// The nesting depth of one decoded value, such as a recursive record holding itself.
+  final int? maxValueDepth;
+
+  /// The item count of one array or map whose items can be encoded in zero bytes, such as an
+  /// array of `null`. Any other count is bounded by the remaining input.
+  final int? maxZeroSizeItems;
 }
