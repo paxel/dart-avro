@@ -287,10 +287,13 @@ final class _Class {
 
 /// A field of a generated class.
 final class _Field {
-  _Field(this.avro, this.name, this.type);
+  _Field(this.avro, this.name, this.type, this.place);
 
   final Field avro;
   final String name;
+
+  /// The name of the sealed class of a union in the field, before `Item` and `Value`.
+  final String place;
 
   /// The Dart type, or null for a field of the type `null`, which gets no Dart field.
   final String? type;
@@ -305,13 +308,98 @@ final class _Field {
       type == 'Object?';
 }
 
+/// The sealed class of a union with two or more non-null branches, at one place of use.
+final class _Sealed {
+  _Sealed(this.name, this.union, this.doc);
+
+  final String name;
+  final UnionSchema union;
+
+  /// Where the union is, for the doc comment: the field and the class of the record.
+  final String doc;
+
+  /// The class of each non-null branch: its name, the branch and the Dart type of its value.
+  late final List<({String name, Schema schema, String type})> branches;
+
+  bool get nullable => union.branches.any((b) => b.type == 'null');
+}
+
 final class _Library {
-  _Library(this.classOf);
+  _Library(this.classOf) {
+    for (final c in classOf.values) {
+      owners[c.name] = '"${c.schema.fullName}"';
+    }
+  }
 
   final Map<NamedSchema, _Class> classOf;
   final StringBuffer body = StringBuffer();
   bool usesTypedData = false;
   bool usesDeep = false;
+
+  /// What each generated Dart type name is taken by, to stop at a clash.
+  final Map<String, String> owners = {};
+
+  /// The sealed classes by name, and those still to be written after the current record.
+  final Map<String, _Sealed> sealed = {};
+  final List<_Sealed> pending = [];
+
+  /// The file and the field whose type is being worked out, for the messages of clashes.
+  String path = '';
+  String where = '';
+  String docWhere = '';
+
+  /// Takes the Dart type name [name] for [what]; throws [GenerateException] if it is taken.
+  void claim(String name, String what) {
+    if (clashingTypeNames.contains(name)) {
+      throw GenerateException(
+        '$path: the Dart name $name of $what would clash with $name of dart:core, '
+        'dart:typed_data or package:avro',
+      );
+    }
+    final other = owners[name];
+    if (other != null) {
+      throw GenerateException(
+        '$path: $what and $other both give the Dart name $name',
+      );
+    }
+    owners[name] = what;
+  }
+
+  /// The sealed class of [u], named [name], declared on first use.
+  _Sealed sealedOf(UnionSchema u, String name) {
+    final known = sealed[name];
+    if (known != null && identical(known.union, u)) return known;
+    claim(name, 'the union in $where');
+    final out = _Sealed(name, u, docWhere);
+    sealed[name] = out;
+    pending.add(out);
+    out.branches = [
+      for (final b in u.branches)
+        if (b.type != 'null') _branchClass(name, b),
+    ];
+    return out;
+  }
+
+  ({String name, Schema schema, String type}) _branchClass(
+    String sealedName,
+    Schema b,
+  ) {
+    final String part;
+    if (b is NamedSchema) {
+      final simple = className(b.name);
+      if (simple == null) {
+        throw GenerateException(
+          '$path: the branch "${b.fullName}" of the union in $where has no Dart name',
+        );
+      }
+      part = simple;
+    } else {
+      part = b.type[0].toUpperCase() + b.type.substring(1);
+    }
+    final name = '$sealedName$part';
+    claim(name, 'the branch "${branchName(b)}" of the union in $where');
+    return (name: name, schema: b, type: typeOf(b, name));
+  }
 
   String finish(List<SchemaFile> files) {
     final out = StringBuffer()
@@ -331,7 +419,9 @@ final class _Library {
     return out.toString();
   }
 
-  String typeOf(Schema s) {
+  /// The Dart type of [s]; [place] names the sealed class of a union with two or more
+  /// non-null branches in it.
+  String typeOf(Schema s, String place) {
     final logical = logicalOf(s);
     if (logical != null) {
       return switch (logical) {
@@ -366,38 +456,54 @@ final class _Library {
       case EnumSchema():
         return classOf[s]!.name;
       case ArraySchema(:final items):
-        return 'List<${typeOf(items)}>';
+        return 'List<${typeOf(items, '${place}Item')}>';
       case MapSchema(:final values):
-        return 'Map<String, ${typeOf(values)}>';
+        return 'Map<String, ${typeOf(values, '${place}Value')}>';
       case RecordSchema():
         return classOf[s]!.name;
       case UnionSchema():
+        if (_isWide(s)) {
+          final sealed = sealedOf(s, place);
+          return sealed.nullable ? '${sealed.name}?' : sealed.name;
+        }
         final inner = _nullableBranch(s);
-        return inner == null ? 'Object?' : '${typeOf(inner)}?';
+        return inner == null ? 'Object?' : '${typeOf(inner, place)}?';
     }
   }
 
-  /// The generic value of a Dart value [e] of [s], or null if it is the Dart value itself.
-  String? toAvro(Schema s, String e, int depth) {
+  /// The generic value of a Dart value [e] of [s], or null if it is the Dart value itself;
+  /// [place] as for [typeOf].
+  String? toAvro(Schema s, String e, int depth, String place) {
     if (logicalOf(s) != null) return null;
     switch (s) {
       case RecordSchema():
         return '${classOf[s]!.name}.avroType.toAvro($e)';
       case ArraySchema(:final items):
         final x = 'x$depth';
-        final inner = toAvro(items, x, depth + 1);
+        final inner = toAvro(items, x, depth + 1, '${place}Item');
         return inner == null ? null : '[for (final $x in $e) $inner]';
       case MapSchema(:final values):
         final x = 'x$depth';
-        final inner = toAvro(values, '$x.value', depth + 1);
+        final inner = toAvro(values, '$x.value', depth + 1, '${place}Value');
         return inner == null
             ? null
             : '{for (final $x in $e.entries) $x.key: $inner}';
+      case UnionSchema() when _isWide(s):
+        final sealed = sealedOf(s, place);
+        final v = 'v$depth';
+        final cases = [
+          for (final b in sealed.branches)
+            '${b.name}(value: final $v) => '
+                "Branch('${branchName(b.schema)}', "
+                '${toAvro(b.schema, v, depth + 1, b.name) ?? v})',
+          if (sealed.nullable) 'null => null',
+        ];
+        return 'switch ($e) { ${cases.join(', ')} }';
       case UnionSchema():
         final branch = _nullableBranch(s);
         if (branch == null) return null;
         final v = 'v$depth';
-        final inner = toAvro(branch, v, depth + 1);
+        final inner = toAvro(branch, v, depth + 1, place);
         return inner == null
             ? null
             : 'switch ($e) { final $v? => $inner, null => null }';
@@ -408,32 +514,44 @@ final class _Library {
     }
   }
 
-  /// The Dart value of [s] for a generic value [e].
-  String fromAvro(Schema s, String e, int depth) {
-    if (logicalOf(s) != null) return '$e as ${typeOf(s)}';
+  /// The Dart value of [s] for a generic value [e]; [place] as for [typeOf].
+  String fromAvro(Schema s, String e, int depth, String place) {
+    if (logicalOf(s) != null) return '$e as ${typeOf(s, place)}';
     switch (s) {
       case RecordSchema():
         return '${classOf[s]!.name}.avroType.fromAvro($e)';
       case ArraySchema(:final items):
         final x = 'x$depth';
         return '[for (final $x in $e as List<Object?>) '
-            '${fromAvro(items, x, depth + 1)}]';
+            '${fromAvro(items, x, depth + 1, '${place}Item')}]';
       case MapSchema(:final values):
         final x = 'x$depth';
         return '{for (final $x in ($e as Map<String, Object?>).entries) '
-            '$x.key: ${fromAvro(values, '$x.value', depth + 1)}}';
+            '$x.key: ${fromAvro(values, '$x.value', depth + 1, '${place}Value')}}';
+      case UnionSchema() when _isWide(s):
+        final sealed = sealedOf(s, place);
+        final v = 'v$depth';
+        final cases = [
+          for (final b in sealed.branches)
+            "Branch(name: '${branchName(b.schema)}', value: final $v) => "
+                '${b.name}(${fromAvro(b.schema, v, depth + 1, b.name)})',
+          if (sealed.nullable) 'null => null',
+          "_ => throw ArgumentError.value($e, 'value', "
+              "'not a branch of ${sealed.name}')",
+        ];
+        return 'switch ($e) { ${cases.join(', ')} }';
       case UnionSchema():
         final branch = _nullableBranch(s);
         if (branch == null) return e;
-        final type = typeOf(branch);
+        final type = typeOf(branch, place);
         if (_isCast(branch)) return '$e as $type?';
         final v = 'v$depth';
-        return 'switch ($e) { final $v? => ${fromAvro(branch, v, depth + 1)}, '
+        return 'switch ($e) { final $v? => ${fromAvro(branch, v, depth + 1, place)}, '
             'null => null }';
       case EnumSchema():
         return '${classOf[s]!.name}.fromSymbol($e as String)';
       case PrimitiveSchema() || FixedSchema():
-        return '$e as ${typeOf(s)}';
+        return '$e as ${typeOf(s, place)}';
     }
   }
 
@@ -514,7 +632,24 @@ final class _Library {
       }
       byName[name] = f;
       final isNull = f.schema is PrimitiveSchema && f.schema.type == 'null';
-      fields.add(_Field(f, name, isNull ? null : typeOf(f.schema)));
+      final place = className(f.name);
+      if (place == null) {
+        throw GenerateException(
+          '${c.path}: the field "${f.name}" of "${schema.fullName}" has no Dart name',
+        );
+      }
+      path = c.path;
+      where = 'the field "${f.name}" of "${schema.fullName}"';
+      docWhere = 'the field `${f.name}` of [${c.name}]';
+      final sealedName = '${c.name}$place';
+      fields.add(
+        _Field(
+          f,
+          name,
+          isNull ? null : typeOf(f.schema, sealedName),
+          sealedName,
+        ),
+      );
     }
     final dart = [
       for (final f in fields)
@@ -555,7 +690,8 @@ final class _Library {
     for (final f in fields) {
       final value = f.type == null
           ? 'null'
-          : toAvro(f.avro.schema, 'value.${f.name}', 0) ?? 'value.${f.name}';
+          : toAvro(f.avro.schema, 'value.${f.name}', 0, f.place) ??
+                'value.${f.name}';
       b.writeln("      '${f.avro.name}': $value,");
     }
     b.writeln('    },');
@@ -568,7 +704,7 @@ final class _Library {
         ..writeln('      return $n(');
       for (final f in dart) {
         b.writeln(
-          '        ${f.name}: ${fromAvro(f.avro.schema, "m['${f.avro.name}']", 0)},',
+          '        ${f.name}: ${fromAvro(f.avro.schema, "m['${f.avro.name}']", 0, f.place)},',
         );
       }
       b
@@ -637,8 +773,58 @@ final class _Library {
       ..writeln("  String toString() => '$n(${shown.join(', ')})';")
       ..writeln('}')
       ..writeln();
+    pending.forEach(writeSealed);
+    pending.clear();
+  }
+
+  void writeSealed(_Sealed u) {
+    final n = u.name;
+    body
+      ..writeln('/// A value of the union in ${u.doc}: one class per branch.')
+      ..writeln('sealed class $n {')
+      ..writeln('  const $n();')
+      ..writeln('}')
+      ..writeln();
+    for (final b in u.branches) {
+      final deep =
+          b.type.startsWith('List<') ||
+          b.type.startsWith('Map<') ||
+          b.type.startsWith('Uint8List');
+      usesDeep = usesDeep || deep;
+      body
+        ..writeln('/// The branch `${branchName(b.schema)}` of [$n].')
+        ..writeln('final class ${b.name} extends $n {')
+        ..writeln('  const ${b.name}(this.value);')
+        ..writeln()
+        ..writeln('  final ${b.type} value;')
+        ..writeln()
+        ..writeln('  @override')
+        ..writeln(
+          deep
+              ? '  bool operator ==(Object other) => '
+                    'other is ${b.name} && _deepEquals(other.value, value);'
+              : '  bool operator ==(Object other) => '
+                    'other is ${b.name} && other.value == value;',
+        )
+        ..writeln()
+        ..writeln('  @override')
+        ..writeln(
+          deep
+              ? '  int get hashCode => _deepHash(value);'
+              : '  int get hashCode => value.hashCode;',
+        )
+        ..writeln()
+        ..writeln('  @override')
+        ..writeln("  String toString() => '${b.name}(\$value)';")
+        ..writeln('}')
+        ..writeln();
+    }
   }
 }
+
+/// Whether [u] has two or more non-null branches, which give a sealed class.
+bool _isWide(UnionSchema u) =>
+    u.branches.where((b) => b.type != 'null').length > 1;
 
 /// The non-null branch of a union of `null` and one other type, or null for any other union.
 Schema? _nullableBranch(UnionSchema u) {

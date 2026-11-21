@@ -132,7 +132,7 @@ CALM</code></pre>
     <tr><td><code>bytes</code>, <code>fixed</code></td>         <td><code>Uint8List</code>; a fixed gets no class</td></tr>
     <tr><td><code>array</code>, <code>map</code></td>           <td><code>List&lt;T&gt;</code>, <code>Map&lt;String, T&gt;</code></td></tr>
     <tr><td><code>["null", T]</code>, in either order</td>      <td><code>T?</code></td></tr>
-    <tr><td>any other union</td>                                <td><code>Object?</code>, holding the generic value</td></tr>
+    <tr><td>any other union</td>                                <td>A <code>sealed class</code> per place of use, with a <code>final class</code> per branch</td></tr>
     <tr><td>a logical type</td>                                 <td>Its Dart value, as in the <a href="../reference/values.html#logical-types">value mapping</a>: <code>DateTime</code>, <code>AvroDecimal</code>, …</td></tr>
     <tr><td>a field of type <code>null</code></td>              <td>No Dart field; its value is always null</td></tr>
   </tbody>
@@ -157,10 +157,12 @@ CALM</code></pre>
 
 <h3>Unions</h3>
 <p>
-  A union of <code>null</code> and one type is a nullable field. Any other union is an
-  <code>Object?</code> holding the generic value of its branch, as an <code>AvroCodec</code> takes
-  it: where several branches fit, a <code>Branch</code> names one. Decoding gives the plain value,
-  never a <code>Branch</code>. Lists, maps and bytes compare by their elements:
+  A union of <code>null</code> and one type is a nullable field. Any other union is a
+  <code>sealed class</code> named after the record and the field, here <code>ReadingValue</code>,
+  with a <code>final class</code> per branch that holds its value, such as
+  <code>ReadingValueLong</code>; a <code>null</code> branch makes the field nullable. The class
+  names the branch, so decoding keeps it and a <code>switch</code> over the field is exhaustive.
+  Lists, maps and bytes compare by their elements:
 </p>
 <pre data-example-schema="guide/codegen-reading"><code class="language-json">{
   "type": "record",
@@ -180,8 +182,8 @@ import 'types.g.dart';
 
 void main() {
   final reading = Reading(
-    // 5 fits int and long: name the branch.
-    value: const Branch('long', 5),
+    // 5 fits int and long: the class names the branch.
+    value: const ReadingValueLong(5),
     class$: 'B',
     raw: Uint8List.fromList([1, 2]),
     labels: {'unit': 'kg'},
@@ -189,14 +191,18 @@ void main() {
   final codec = TypedCodec(Reading.avroType);
   final back = codec.decode(codec.encode(reading));
   print(back);
-  print(back.value.runtimeType);
+  print(switch (back.value) {
+    ReadingValueInt(:final value) =&gt; 'int $value',
+    ReadingValueLong(:final value) =&gt; 'long $value',
+    ReadingValueString(:final value) =&gt; 'string $value',
+  });
 
   // Lists, maps and bytes compare by their elements.
-  print(back == reading.copyWith(value: 5));
-  print(back.hashCode == reading.copyWith(value: 5).hashCode);
+  print(back == reading);
+  print(back.hashCode == reading.hashCode);
 }</code></pre>
-<pre data-example-output="guide/codegen-unions"><code>Reading(value: 5, class$: B, raw: [1, 2], labels: {unit: kg})
-int
+<pre data-example-output="guide/codegen-unions"><code>Reading(value: ReadingValueLong(5), class$: B, raw: [1, 2], labels: {unit: kg})
+long 5
 true
 true</code></pre>
 
@@ -317,8 +323,8 @@ enum Mood {
     not constructor defaults: they are for schema resolution only.
   </li>
   <li>
-    <strong><code>==</code> and <code>hashCode</code></strong> compare every field; lists, maps,
-    bytes and <code>Object?</code> fields compare by their elements.
+    <strong><code>==</code> and <code>hashCode</code></strong> compare every field; lists, maps
+    and bytes compare by their elements.
   </li>
   <li><strong><code>toString</code></strong> shows the Dart field names and their values.</li>
   <li>

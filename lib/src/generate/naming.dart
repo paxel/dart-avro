@@ -119,6 +119,7 @@ const clashingTypeNames = {
   'Uint8List',
   // package:avro
   'AvroType',
+  'Branch',
   'AvroDate',
   'AvroDecimal',
   'AvroDuration',

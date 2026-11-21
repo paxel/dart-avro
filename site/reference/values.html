@@ -37,7 +37,7 @@
     <tr><td><code>array</code></td> <td><code>List&lt;Object?&gt;</code>, but not a <code>Uint8List</code></td>  <td><code>List&lt;Object?&gt;</code></td></tr>
     <tr><td><code>map</code></td>   <td><code>Map&lt;String, Object?&gt;</code></td>                            <td><code>Map&lt;String, Object?&gt;</code></td></tr>
     <tr><td><code>fixed</code></td> <td><code>Uint8List</code> of exactly the size</td>                         <td><code>Uint8List</code></td></tr>
-    <tr><td>union</td>              <td>the value of one branch, or <code>Branch(name, value)</code></td>       <td>the value of the branch, never a <code>Branch</code></td></tr>
+    <tr><td>union</td>              <td>the value of one branch, or <code>Branch(name, value)</code></td>       <td>the value of the branch; a <code>Branch</code> with <code>decodeBranches</code></td></tr>
   </tbody>
 </table>
 </div>
@@ -165,7 +165,7 @@
     <tr><td><code>enum</code></td>                       <td>A generated <code>enum</code></td>                 <td>Its <code>symbol</code>, a <code>String</code></td></tr>
     <tr><td><code>array</code>, <code>map</code></td>    <td><code>List&lt;T&gt;</code>, <code>Map&lt;String, T&gt;</code></td><td>A list or map of the generic values</td></tr>
     <tr><td><code>["null", T]</code></td>                <td><code>T?</code></td>                               <td>null, or the generic value of <code>T</code></td></tr>
-    <tr><td>any other union</td>                         <td><code>Object?</code></td>                          <td>The value itself, a <code>Branch</code> included</td></tr>
+    <tr><td>any other union</td>                         <td>A generated <code>sealed class</code></td>         <td>A <code>Branch</code> of the branch's generic value</td></tr>
     <tr><td><code>fixed</code></td>                      <td><code>Uint8List</code></td>                        <td>The same</td></tr>
     <tr><td><code>null</code> as a field</td>            <td>No field</td>                                      <td><code>null</code></td></tr>
     <tr><td>every other type</td>                        <td>Its Dart value, as above</td>                      <td>The same</td></tr>

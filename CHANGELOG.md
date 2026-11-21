@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `AvroCodec.encodeJson` and `decodeJson`, and the same on `TypedCodec`, write and read Avro's JSON encoding, with `indent:` for indented output and resolution on decoding; a union is `null` or `{"<branch>": value}`, and `NaN` and the infinities are strings ([avro-1028](https://github.com/paxel/dart-avro/issues/32)).
 - `AvroCodec(decodeBranches: true)` decodes every union with two or more non-null branches into a `Branch` of the reader's branch, in `decode`, `decodeSingleObject`, `decodeJson`, the records of a container file and reader defaults, so a decoded value encodes back unchanged; `null` and a union of `null` and one other branch stay plain ([avro-1029](https://github.com/paxel/dart-avro/issues/33)).
 
+### Changed
+
+- Breaking: `dart run avro:generate` maps a union with two or more non-null branches to a `sealed class` per place of use, named after the record and the field, with a `final class` per branch, instead of `Object?`, and `TypedCodec` decodes with `decodeBranches`, so code generated with 0.2.0 that holds such a union as `Object?` must be regenerated and updated; a record or enum named `Branch` now needs a `--prefix` ([avro-1030](https://github.com/paxel/dart-avro/issues/34)).
+
 ---
 
 Historical changes have been moved to [OLDER_CHANGES.md](OLDER_CHANGES.md).

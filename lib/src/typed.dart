@@ -24,7 +24,9 @@ final class AvroType<T> {
   /// The generic value of [AvroCodec] for a Dart value.
   final Object? Function(T value) toAvro;
 
-  /// The Dart value for a generic value of [AvroCodec], decoded with [schema] as the reader.
+  /// The Dart value for a generic value of [AvroCodec], decoded with [schema] as the reader
+  /// and with `decodeBranches`, so that every union with two or more non-null branches is a
+  /// [Branch].
   final T Function(Object? value) fromAvro;
 }
 
@@ -32,7 +34,7 @@ final class AvroType<T> {
 ///
 /// Values are always encoded with the type's own schema. Decoding reads data of [writer],
 /// which defaults to the type's schema, as the type's schema, with the schema resolution of
-/// [AvroCodec], compiled once here.
+/// [AvroCodec], compiled once here, and with `decodeBranches`, as [AvroType.fromAvro] needs.
 final class TypedCodec<T> {
   /// A codec for [type]. Throws `ResolutionException` if [writer] does not resolve against the
   /// type's schema.
@@ -44,6 +46,7 @@ final class TypedCodec<T> {
          writer: writer ?? type.schema,
          reader: type.schema,
          limits: limits,
+         decodeBranches: true,
        ),
        _own = writer == null
            ? null
@@ -52,8 +55,9 @@ final class TypedCodec<T> {
   /// The type this codec encodes and decodes.
   final AvroType<T> type;
 
-  /// The underlying codec: data of the writer schema, read as the type's schema. Without a
-  /// writer schema, its writer is the type's schema, so it also suits an `AvroFileWriter`.
+  /// The underlying codec: data of the writer schema, read as the type's schema, with
+  /// `decodeBranches`. Without a writer schema, its writer is the type's schema, so it also
+  /// suits an `AvroFileWriter`, and its records suit [AvroType.fromAvro].
   final AvroCodec avro;
 
   final AvroCodec? _own;

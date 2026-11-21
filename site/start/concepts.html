@@ -117,8 +117,9 @@ void main() {
 <pre data-example-output="start/branch"><code>EncodeException at $: more than one branch fits; wrap the value in a Branch of one of int, long
 1</code></pre>
 <p>
-  <code>decode</code> returns the plain value, never a <code>Branch</code>. A union of two records
-  with the same fields therefore cannot be told apart after decoding.
+  <code>decode</code> returns the plain value, and a <code>Branch</code> only for a codec made with
+  <code>decodeBranches: true</code>; without it, a union of two records with the same fields
+  cannot be told apart after decoding.
 </p>
 
 <h2>Logical types</h2>

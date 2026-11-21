@@ -213,10 +213,11 @@ RED</code></pre>
 
 <h2>What decode returns</h2>
 <p>
-  <code>decode</code> returns plain values only, never a <code>Branch</code>. Records come back as
-  maps with one entry per field of the reader schema, in its field order; lists and maps are new,
-  growable objects that you may change. Two branches that decode to the same kind of value, such
-  as two records with the same fields, cannot be told apart afterwards. If that matters, give the
+  <code>decode</code> returns plain values, and a <code>Branch</code> only for a codec made with
+  <code>decodeBranches: true</code>. Records come back as maps with one entry per field of the
+  reader schema, in its field order; lists and maps are new, growable objects that you may change.
+  Without <code>decodeBranches</code>, two branches that decode to the same kind of value, such as
+  two records with the same fields, cannot be told apart afterwards. If that matters, give the
   records different field names, or wrap the value in a record with an enum that says which it
   is.
 </p>
