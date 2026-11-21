@@ -1,6 +1,6 @@
 # avro
 
-A pure-Dart implementation of the binary core of Apache Avro 1.12: schemas, binary and single-object encoding, schema resolution, fingerprints and object container files.
+A pure-Dart implementation of Apache Avro 1.12: schemas, binary, JSON and single-object encoding, schema resolution, fingerprints, object container files, and typed classes generated from schemas.
 
 ## Language
 
@@ -65,7 +65,7 @@ _Avoid_: chunk, batch, page
 The 16 bytes that end every block of a container file.
 
 **Compression**:
-How the blocks of a container file are compressed: `null` or `deflate`. The Avro specification calls it the file's codec.
+How the blocks of a container file are compressed: `null`, `deflate`, `snappy`, `bzip2`, `xz` or `zstandard`. The Avro specification calls it the file's codec.
 _Avoid_: codec (taken by the encoding object above)
 
 ### Single-object encoding

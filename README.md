@@ -22,13 +22,13 @@ A pure-Dart implementation of [Apache Avro 1.12](https://avro.apache.org/docs/1.
 ## What it covers
 
 - Every primitive, complex and logical type of Avro 1.12.
-- Binary encoding and single-object encoding.
+- Binary encoding, single-object encoding and JSON encoding.
 - Schema parsing and schema resolution between a writer and a reader schema.
 - Parsing Canonical Form, with the fingerprints CRC-64-AVRO, MD5 and SHA-256.
-- Object container files, read and write, compressed with `null` or `deflate`.
-- Typed Dart classes generated from `.avsc` files with `dart run avro:generate`, encoded and decoded with `TypedCodec`.
+- Object container files, read and write, in memory or as streams, compressed with `null`, `deflate`, `snappy`, `bzip2`, `xz` or `zstandard`.
+- Typed Dart classes generated from `.avsc` files with `dart run avro:generate` or the library `package:avro/generate.dart`, with a sealed class for each union of two or more non-null branches, encoded and decoded with `TypedCodec`.
 
-Not covered: JSON encoding, the compressions `snappy`, `bzip2`, `xz` and `zstandard`, and the Avro IPC/RPC protocol.
+Not covered: the Avro IPC/RPC protocol.
 
 ## Licence
 

@@ -1,5 +1,7 @@
-/// Apache Avro 1.12 for Dart: schemas, binary and single-object encoding, schema resolution,
-/// fingerprints and object container files.
+/// Apache Avro 1.12 for Dart: schemas, binary, JSON and single-object encoding, schema
+/// resolution, fingerprints, and object container files in memory or as streams, in every Avro
+/// compression. Typed classes are generated with `dart run avro:generate` or
+/// `package:avro/generate.dart`.
 library;
 
 export 'src/container.dart' show AvroFileHeader, AvroFileReader, AvroFileWriter;

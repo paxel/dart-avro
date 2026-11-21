@@ -1,4 +1,4 @@
-<!-- page: title="Reference" track="reference" order=0 summary="The Reference track: the value mapping, the types of generated code, the AvroLimits defaults, the exception types, the conformance with the Avro specification, and the API reference on pub.dev." -->
+<!-- page: title="Reference" track="reference" order=0 summary="The Reference track: the value mapping, the types of generated code and the generator library, the JSON encoding, the compressions and container file types, the AvroLimits defaults, the exception types, the conformance with the Avro specification, and the API reference on pub.dev." -->
 <p class="lede">
   Lookups, not reading: tables of what the package does, with little prose. The
   <a href="../guide/index.html">Guide</a> explains the same facts with examples.
@@ -9,7 +9,21 @@
     <a class="card" href="values.html">
       <p class="eyebrow">Tables</p>
       <p class="card-title">Value mapping</p>
-      <p>Every Avro type and logical type and its Dart value, the edges, and the types of generated code.</p>
+      <p>Every Avro type and logical type and its Dart value, the edges, <code>decodeBranches</code>, generated code and <code>generateDart</code>.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="json.html">
+      <p class="eyebrow">Tables</p>
+      <p class="card-title">JSON encoding</p>
+      <p>The JSON of every type, union branch names, <code>NaN</code>, what <code>decodeJson</code> rejects.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="container-files.html">
+      <p class="eyebrow">Tables</p>
+      <p class="card-title">Container files</p>
+      <p>The six compressions and what each supports, and the in-memory and stream readers and writers.</p>
     </a>
   </li>
   <li>
@@ -30,14 +44,14 @@
     <a class="card" href="conformance.html">
       <p class="eyebrow">Tables</p>
       <p class="card-title">Spec conformance</p>
-      <p>What of Avro 1.12 is in 0.2.0, and the test oracles and interoperability results.</p>
+      <p>What of Avro 1.12 is in 0.3.0, and the test oracles and interoperability results.</p>
     </a>
   </li>
   <li>
     <a class="card" href="https://pub.dev/documentation/avro/latest/">
       <p class="eyebrow">pub.dev</p>
       <p class="card-title">API reference</p>
-      <p>Every class and member of <code>package:avro/avro.dart</code>, generated from the source.</p>
+      <p>Every class and member of <code>package:avro/avro.dart</code> and <code>package:avro/generate.dart</code>, generated from the source.</p>
     </a>
   </li>
 </ul>

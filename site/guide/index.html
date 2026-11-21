@@ -1,4 +1,4 @@
-<!-- page: title="Guide" track="guide" order=0 summary="The Guide track: one task per page, from schemas and unions to container files, limits, errors and code generation." -->
+<!-- page: title="Guide" track="guide" order=0 summary="The Guide track: one task per page, from schemas and unions to JSON, container files, compressions, streams, limits, errors and code generation." -->
 <p class="lede">
   One task per page, each with programs you can run as they are. Read them in any order; each
   page links to the others where they meet.
@@ -16,7 +16,7 @@
     <a class="card" href="values.html">
       <p class="eyebrow">Chapter 2</p>
       <p class="card-title">Values and unions</p>
-      <p>The plain Dart values, strict records, how a union branch is inferred, and <code>Branch</code>.</p>
+      <p>The plain Dart values, strict records, how a union branch is inferred, <code>Branch</code> and <code>decodeBranches</code>.</p>
     </a>
   </li>
   <li>
@@ -34,38 +34,59 @@
     </a>
   </li>
   <li>
-    <a class="card" href="container-files.html">
+    <a class="card" href="json.html">
       <p class="eyebrow">Chapter 5</p>
+      <p class="card-title">JSON encoding</p>
+      <p><code>encodeJson</code> and <code>decodeJson</code>: union branches, bytes, <code>NaN</code>, resolution and strict input.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="container-files.html">
+      <p class="eyebrow">Chapter 6</p>
       <p class="card-title">Container files</p>
       <p>Write files with metadata and compression; read the header first, then the records.</p>
     </a>
   </li>
   <li>
+    <a class="card" href="compressions.html">
+      <p class="eyebrow">Chapter 7</p>
+      <p class="card-title">Compressions</p>
+      <p><code>null</code>, <code>deflate</code>, <code>snappy</code>, <code>bzip2</code>, <code>xz</code> and <code>zstandard</code>, their checksums and their limits.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="streams.html">
+      <p class="eyebrow">Chapter 8</p>
+      <p class="card-title">Streamed container files</p>
+      <p>Read a file from a <code>Stream</code> and write one to a <code>StreamSink</code>, one block in memory at a time.</p>
+    </a>
+  </li>
+  <li>
     <a class="card" href="fingerprints.html">
-      <p class="eyebrow">Chapter 6</p>
+      <p class="eyebrow">Chapter 9</p>
       <p class="card-title">Fingerprints and canonical form</p>
       <p>The Parsing Canonical Form, CRC-64-AVRO as an <code>int</code>, MD5 and SHA-256.</p>
     </a>
   </li>
   <li>
     <a class="card" href="limits.html">
-      <p class="eyebrow">Chapter 7</p>
+      <p class="eyebrow">Chapter 10</p>
       <p class="card-title">Untrusted input and limits</p>
-      <p><code>AvroLimits</code>, the checks that are always on, deflate bombs and deep values.</p>
+      <p><code>AvroLimits</code>, the checks that are always on, compression bombs and deep values.</p>
     </a>
   </li>
   <li>
     <a class="card" href="errors.html">
-      <p class="eyebrow">Chapter 8</p>
+      <p class="eyebrow">Chapter 11</p>
       <p class="card-title">Errors</p>
       <p>The sealed <code>AvroException</code>, an exhaustive switch, and what each type carries.</p>
     </a>
   </li>
   <li>
     <a class="card" href="codegen.html">
-      <p class="eyebrow">Chapter 9</p>
+      <p class="eyebrow">Chapter 12</p>
       <p class="card-title">Code generation</p>
-      <p>Dart classes and enums from <code>.avsc</code> files, and <code>TypedCodec</code> to encode them.</p>
+      <p>Dart classes, enums and sealed unions from <code>.avsc</code> files, <code>TypedCodec</code>, and the generator as a library.</p>
     </a>
   </li>
 </ul>

@@ -1,4 +1,4 @@
-<!-- page: title="Exceptions" track="reference" order=3 summary="Each subtype of the sealed AvroException: what throws it, when, the fields it carries and how it prints; and the Dart errors the package throws for wrong arguments." -->
+<!-- page: title="Exceptions" track="reference" order=5 summary="Each subtype of the sealed AvroException: what throws it, when, the fields it carries and how it prints; and the Dart errors the package throws for wrong arguments." -->
 <p class="lede">
   The six subtypes of <code>AvroException</code>, what throws each, and what each carries. The
   <a href="../guide/errors.html">Errors</a> guide shows how to handle them.
@@ -32,7 +32,7 @@
 <h2><code>SchemaParseException</code></h2>
 <p>The JSON text is not JSON, or not a valid Avro schema.</p>
 <ul>
-  <li>Thrown by <code>Schema.parse</code>, and so by <code>AvroFileWriter</code> for a <code>schemaJson</code> that is not a schema, and by <code>AvroFileReader.records()</code>, when the iteration starts, for a file whose <code>avro.schema</code> is not a schema.</li>
+  <li>Thrown by <code>Schema.parse</code>, and so by <code>AvroFileWriter</code> and <code>AvroFileStreamWriter</code> for a <code>schemaJson</code> that is not a schema, and by <code>records</code> of <code>AvroFileReader</code> and <code>AvroFileStreamReader</code>, when the records start, for a file whose <code>avro.schema</code> is not a schema.</li>
   <li><code>path</code>: where in the schema, such as <code>Memo.fields[1].type</code>, <code>$</code> or <code>$[2]</code> from the root; <code>null</code> when the text is not JSON.</li>
 </ul>
 
@@ -40,7 +40,7 @@
 <p>A writer schema does not resolve against a reader schema.</p>
 <ul>
   <li>Thrown by <code>AvroCodec(writer:, reader:)</code>, before any data is read, for every problem that does not depend on the data.</li>
-  <li>Thrown by <code>decode</code>, <code>decodeSingleObject</code> and <code>AvroFileReader.records(codec)</code> for a datum that holds an enum symbol the reader lacks and has no default for, or a branch of a writer union that does not resolve.</li>
+  <li>Thrown by <code>decode</code>, <code>decodeSingleObject</code>, <code>decodeJson</code> and the <code>records(codec)</code> of both readers for a datum that holds an enum symbol the reader lacks and has no default for, or a branch of a writer union that does not resolve.</li>
   <li><code>path</code>: from the constructor, a place in the schemas, such as <code>Memo.written</code> or <code>Memo.tags[]</code>; from decoding, the place in the value, such as <code>$.colour</code>.</li>
 </ul>
 
@@ -48,32 +48,33 @@
 <p>The bytes are not a valid encoding.</p>
 <ul>
   <li>Thrown by <code>decode</code> and <code>decodeSingleObject</code>: truncated or malformed data, a value beyond its type, bytes left over after the datum, a logical value that cannot be read.</li>
+  <li>Thrown by <code>decodeJson</code>: text that is not JSON, or JSON that is not a value of the writer schema: a missing or unknown record field, a value of the wrong JSON type, an <code>int</code> beyond 32 bits, a union key that names no branch or two, a code point over 255 in <code>bytes</code> or <code>fixed</code>.</li>
   <li>Thrown by <code>SingleObjectHeader.parse</code> and <code>decodeSingleObject</code>: fewer than 10 bytes, no marker <code>C3 01</code>, and, for <code>decodeSingleObject</code>, a fingerprint that is not the writer schema's.</li>
-  <li>Thrown by the <code>AvroFileReader</code> constructor: no magic, a malformed header, no <code>avro.schema</code>, or <code>avro.schema</code> or <code>avro.codec</code> that is not UTF-8.</li>
-  <li>Thrown while iterating <code>AvroFileReader.records</code>: a malformed block, a sync marker that does not match, data that is not valid DEFLATE, a record count the block cannot hold, bytes left after the records.</li>
-  <li><code>offset</code>: the byte where decoding failed, from the start of the bytes decoded; for the records of a container file, from the start of the decompressed block.</li>
+  <li>Thrown by the <code>AvroFileReader</code> constructor and <code>AvroFileStreamReader.open</code>: no magic, a malformed or cut-off header, no <code>avro.schema</code>, or <code>avro.schema</code> or <code>avro.codec</code> that is not UTF-8.</li>
+  <li>Thrown while reading the <code>records</code> of either reader: a malformed or cut-off block, a sync marker that does not match, data that is not valid for its compression, a <code>snappy</code> CRC32 or another checksum that does not match, a block over a memory cap of the <code>archive</code> decoders, a record count the block cannot hold, bytes left after the records; and, before the first record, a codec whose writer schema is not the file's.</li>
+  <li><code>offset</code>: the byte where decoding failed, from the start of the bytes decoded; for the records of a container file, from the start of the decompressed block; 0 for <code>decodeJson</code>.</li>
   <li><code>blockOffset</code>: for the records of a container file, the file offset at which the record's block starts; <code>toString</code> then reads <code>DecodeException at byte 1 of the block at byte 79: …</code>. Null outside container files.</li>
-  <li><code>path</code>: the place in the value when a logical type cannot be read, such as a <code>timestamp-millis</code> beyond <code>DateTime</code> or a <code>uuid</code> string that is not a UUID; otherwise <code>null</code>.</li>
+  <li><code>path</code>: the place in the value when a logical type cannot be read, such as a <code>timestamp-millis</code> beyond <code>DateTime</code> or a <code>uuid</code> string that is not a UUID, and the place in the JSON when <code>decodeJson</code> fails on a value, such as <code>$.payload</code>; otherwise <code>null</code>.</li>
 </ul>
 
 <h2><code>EncodeException</code></h2>
 <p>A value does not fit the schema it is encoded with.</p>
 <ul>
-  <li>Thrown by <code>encode</code>, <code>encodeSingleObject</code> and <code>AvroFileWriter.add</code>: a value of the wrong Dart type, a missing record field or an unknown key, an <code>int</code> beyond 32 bits, a wrong <code>fixed</code> size, an unknown enum symbol, an unpaired surrogate, a union value that fits no branch or more than one, a logical value that would lose precision or does not fit.</li>
+  <li>Thrown by <code>encode</code>, <code>encodeSingleObject</code>, <code>encodeJson</code> and the <code>add</code> of both writers: a value of the wrong Dart type, a missing record field or an unknown key, an <code>int</code> beyond 32 bits, a wrong <code>fixed</code> size, an unknown enum symbol, an unpaired surrogate, a union value that fits no branch or more than one, a logical value that would lose precision or does not fit.</li>
   <li><code>path</code>: the place in the value: <code>$</code>, <code>$.written.year</code>, <code>$.items[2]</code>.</li>
 </ul>
 
 <h2><code>LimitExceededException</code></h2>
 <p>Input exceeds one of the <a href="limits.html">limits</a>.</p>
 <ul>
-  <li>Thrown by <code>Schema.parse</code> for <code>maxSchemaBytes</code> and <code>maxSchemaDepth</code>, by <code>decode</code>, <code>decodeSingleObject</code>, <code>encode</code> and <code>encodeSingleObject</code> for <code>maxValueDepth</code>, by <code>decode</code> and <code>decodeSingleObject</code> for <code>maxZeroSizeItems</code>, and while iterating <code>AvroFileReader.records</code> for <code>maxBlockBytes</code>, <code>maxTotalBytes</code> and <code>maxZeroSizeItems</code>. Every limit throws this exception, whatever the direction.</li>
+  <li>Thrown by <code>Schema.parse</code> for <code>maxSchemaBytes</code> and <code>maxSchemaDepth</code>, by <code>decode</code>, <code>decodeSingleObject</code>, <code>decodeJson</code>, <code>encode</code>, <code>encodeSingleObject</code> and <code>encodeJson</code> for <code>maxValueDepth</code>, by <code>decode</code>, <code>decodeSingleObject</code> and <code>decodeJson</code> for <code>maxZeroSizeItems</code>, while reading the <code>records</code> of either reader for <code>maxBlockBytes</code>, <code>maxTotalBytes</code> and <code>maxZeroSizeItems</code>, and by <code>AvroFileStreamReader.open</code> for <code>maxBlockBytes</code>, for the header. Every limit throws this exception, whatever the direction.</li>
   <li><code>limit</code>: the name of the <code>AvroLimits</code> field, such as <code>maxBlockBytes</code>.</li>
 </ul>
 
 <h2><code>UnsupportedCompressionException</code></h2>
 <p>A container file uses a compression this package does not support.</p>
 <ul>
-  <li>Thrown by the <code>AvroFileReader</code> constructor for a file whose <code>avro.codec</code> is not <code>null</code> or <code>deflate</code>, and by the <code>AvroFileWriter</code> constructor for such a <code>compression</code>.</li>
+  <li>Thrown by the <code>AvroFileReader</code> constructor and <code>AvroFileStreamReader.open</code> for a file whose <code>avro.codec</code> is none of <code>null</code>, <code>deflate</code>, <code>snappy</code>, <code>bzip2</code>, <code>xz</code> and <code>zstandard</code>, and by the <code>AvroFileWriter</code> and <code>AvroFileStreamWriter</code> constructors for such a <code>compression</code>.</li>
   <li><code>compression</code>: the value of <code>avro.codec</code>, or the argument.</li>
 </ul>
 
@@ -84,9 +85,14 @@
     <tr><th>Error</th>                     <th>Thrown by</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>ArgumentError</code></td><td><code>AvroFileWriter</code>: a <code>metadata</code> key starting with <code>avro.</code>, a <code>syncMarker</code> that is not 16 bytes, a <code>schemaJson</code> whose canonical form is not the codec's writer schema's</td></tr>
+    <tr><td><code>ArgumentError</code></td><td><code>AvroFileWriter</code> and <code>AvroFileStreamWriter</code>: a <code>metadata</code> key starting with <code>avro.</code>, a <code>syncMarker</code> that is not 16 bytes, a <code>schemaJson</code> whose canonical form is not the codec's writer schema's</td></tr>
     <tr><td><code>ArgumentError</code></td><td><code>crc64FromBytes</code>: anything but 8 bytes</td></tr>
-    <tr><td><code>StateError</code></td>   <td><code>AvroFileWriter</code>: <code>add</code>, <code>flush</code> or <code>close</code> after <code>close</code></td></tr>
+    <tr><td><code>ArgumentError</code></td><td><code>generateDart</code> of <code>package:avro/generate.dart</code>: a key of <code>prefixes</code> that is not a namespace, or a value that is not an UpperCamelCase prefix</td></tr>
+    <tr><td><code>ArgumentError</code></td><td><code>fromAvro</code> of generated code: a value of a sealed union that is not a <code>Branch</code> of the union</td></tr>
+    <tr><td><code>GenerateException</code></td><td><code>generateDart</code>: a source that is not a valid schema, two definitions of one name that differ, a Dart name that cannot be generated or clashes</td></tr>
+    <tr><td><code>StateError</code></td>   <td><code>AvroFileWriter</code> and <code>AvroFileStreamWriter</code>: <code>add</code>, <code>flush</code> or <code>close</code> after <code>close</code></td></tr>
+    <tr><td><code>StateError</code></td>   <td><code>AvroFileStreamReader</code>: <code>records</code> a second time or after <code>cancel</code></td></tr>
+    <tr><td>the input's own error</td>     <td><code>AvroFileStreamReader</code>: an error of the input stream, passed on unwrapped; and an error of the sink of <code>AvroFileStreamWriter</code></td></tr>
   </tbody>
 </table>
 </div>

@@ -170,6 +170,12 @@ void main() {
 the writer wrote a branch that does not resolve: ResolutionException at long&lt;string&gt;: string does not resolve to long
 5
 5.0</code></pre>
+<p>
+  A codec made with <code>decodeBranches: true</code> returns the value of a reader union with
+  two or more non-null branches as a <code>Branch</code> named after the reader branch it was
+  read as, also when the writer schema is not a union, and also for a default the reader schema
+  fills in. See <a href="values.html#decoding-into-branch">Decoding into <code>Branch</code></a>.
+</p>
 
 <h2>What throws, and when</h2>
 <p>

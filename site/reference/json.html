@@ -1,0 +1,90 @@
+<!-- page: title="JSON encoding" track="reference" order=2 summary="The rules of encodeJson and decodeJson: the JSON of every Avro type and logical type, union branch names, NaN and the infinities, float digits, what decodeJson rejects, the errors and the limits." -->
+<p class="lede">
+  The JSON that <code>encodeJson</code> writes and <code>decodeJson</code> reads, on
+  <code>AvroCodec</code> and <code>TypedCodec</code>. The <a href="../guide/json.html">JSON
+  encoding</a> guide shows it at work.
+</p>
+
+<h2>The methods</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Method</th>                                      <th>What it does</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>encodeJson(value, {String? indent})</code></td><td>The JSON text of <code>value</code> in the writer schema, compact, or indented by <code>indent</code>; a <code>String</code></td></tr>
+    <tr><td><code>decodeJson(String json)</code></td>         <td>The value of the JSON text of the writer schema, read as the reader schema, as <code>decode</code> returns it</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  Both go through the binary encoding of the writer schema, so every check of
+  <code>encode</code> and <code>decode</code> applies, and so do resolution, logical types and
+  <code>decodeBranches</code>. On <code>TypedCodec</code>, <code>encodeJson</code> takes and
+  <code>decodeJson</code> returns the generated class.
+</p>
+
+<h2>The JSON of each type</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Avro type</th>                               <th><code>encodeJson</code> writes</th>                         <th><code>decodeJson</code> accepts</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>null</code></td>                       <td><code>null</code></td>                                     <td><code>null</code></td></tr>
+    <tr><td><code>boolean</code></td>                    <td><code>true</code>, <code>false</code></td>                 <td><code>true</code>, <code>false</code></td></tr>
+    <tr><td><code>int</code>, <code>long</code></td>     <td>A JSON integer</td>                                        <td>A JSON integer; for <code>int</code>, within 32 bits; not <code>36.0</code></td></tr>
+    <tr><td><code>float</code></td>                      <td>The number with the fewest digits that is the same float</td><td>Any JSON number, or the strings below</td></tr>
+    <tr><td><code>double</code></td>                     <td>The number</td>                                            <td>Any JSON number, or the strings below</td></tr>
+    <tr><td><code>float</code>, <code>double</code> not finite</td><td><code>"NaN"</code>, <code>"Infinity"</code>, <code>"-Infinity"</code></td><td>The same strings</td></tr>
+    <tr><td><code>bytes</code>, <code>fixed</code></td>  <td>A string with one code point, 0 to 255, per byte</td>     <td>The same; a code point over 255, or a <code>fixed</code> of another size, is rejected</td></tr>
+    <tr><td><code>string</code></td>                     <td>The string</td>                                            <td>A well-formed string</td></tr>
+    <tr><td><code>enum</code></td>                       <td>The symbol, as a string</td>                               <td>A symbol of the writer's enum</td></tr>
+    <tr><td><code>array</code></td>                      <td>A JSON array</td>                                          <td>A JSON array</td></tr>
+    <tr><td><code>map</code></td>                        <td>A JSON object</td>                                         <td>A JSON object</td></tr>
+    <tr><td><code>record</code></td>                     <td>A JSON object of every field, in schema order</td>         <td>A JSON object of exactly the writer's fields, in any order; no defaults are filled in</td></tr>
+    <tr><td>union</td>                                   <td><code>null</code>, or <code>{"&lt;branch&gt;": value}</code></td><td><code>null</code>, <code>{"null": null}</code>, or <code>{"&lt;branch&gt;": value}</code></td></tr>
+    <tr><td>a logical type</td>                          <td>The JSON of its underlying type: a <code>timestamp-millis</code> as its <code>long</code>, a <code>decimal</code> as its <code>bytes</code></td><td>The same</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Union branch names</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Branch</th>                    <th>Written as</th>                         <th>Also read as</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>A named type</td>              <td>Its full name: <code>com.example.Click</code></td><td>Its simple name, <code>Click</code>, when no other branch of the union has that simple name</td></tr>
+    <tr><td>Any other type</td>            <td>Its type name: <code>int</code>, <code>string</code>, <code>array</code>, <code>map</code></td><td>Nothing else</td></tr>
+    <tr><td>A logical type</td>            <td>Its underlying type's name: <code>long</code> for <code>timestamp-millis</code></td><td>Nothing else</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  These are the names of <code>Branch</code> and the names Apache Avro's Java implementation
+  writes. The branch of a value is chosen as by <code>encode</code>; a value that fits more than
+  one branch needs a <code>Branch</code>.
+</p>
+
+<h2>Errors and limits</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Case</th>                                                <th>Thrown</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>encodeJson</code>: a value that does not fit the writer schema</td><td><code>EncodeException</code> with the <code>path</code> of the value, as from <code>encode</code></td></tr>
+    <tr><td><code>decodeJson</code>: text that is not JSON</td>       <td><code>DecodeException</code>, <code>offset</code> 0, no <code>path</code></td></tr>
+    <tr><td><code>decodeJson</code>: JSON that is not a value of the writer schema</td><td><code>DecodeException</code>, <code>offset</code> 0, the <code>path</code> in the JSON, such as <code>$.payload</code></td></tr>
+    <tr><td><code>decodeJson</code>: a union key that is not a branch, or the simple name of two</td><td><code>DecodeException</code>, naming the branches</td></tr>
+    <tr><td><code>decodeJson</code>: data that does not resolve to the reader schema</td><td><code>ResolutionException</code>, as from <code>decode</code></td></tr>
+    <tr><td><code>decodeJson</code>: JSON nested deeper than <code>maxValueDepth</code></td><td><code>LimitExceededException</code>, before the text is parsed</td></tr>
+    <tr><td>Either: a value nested deeper than <code>maxValueDepth</code></td><td><code>LimitExceededException</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  A key repeated in a JSON object keeps its last value; the repetition is not detected.
+</p>

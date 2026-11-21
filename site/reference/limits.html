@@ -1,4 +1,4 @@
-<!-- page: title="Limits" track="reference" order=2 summary="Every field of AvroLimits: its default, what it bounds, who checks it and what is thrown; AvroLimits.none and the checks that are always on." -->
+<!-- page: title="Limits" track="reference" order=4 summary="Every field of AvroLimits: its default, what it bounds, who checks it and what is thrown; AvroLimits.none and the checks that are always on." -->
 <p class="lede">
   The fields of <code>AvroLimits</code>, their defaults, and what happens over them. The
   <a href="../guide/limits.html">Untrusted input and limits</a> guide explains when to change them.
@@ -13,9 +13,9 @@
   <tbody>
     <tr><td><code>maxSchemaBytes</code></td>  <td>1,048,576 (1 MiB)</td>           <td>The JSON text of one schema, in UTF-8 bytes</td></tr>
     <tr><td><code>maxSchemaDepth</code></td>  <td>64</td>                          <td>The nesting of <code>[</code> and <code>{</code> in a schema's JSON text, counted before it is decoded</td></tr>
-    <tr><td><code>maxValueDepth</code></td>   <td>1,024</td>                       <td>The nesting depth of one value: each record field, array item, map value and union branch is one level</td></tr>
+    <tr><td><code>maxValueDepth</code></td>   <td>1,024</td>                       <td>The nesting depth of one value: each record field, array item, map value and union branch is one level; also the nesting of the JSON text <code>decodeJson</code> reads</td></tr>
     <tr><td><code>maxZeroSizeItems</code></td><td>1,048,576</td>                   <td>The item count of one array whose items take zero bytes, such as <code>null</code>; also the record count of a container block whose records take zero bytes</td></tr>
-    <tr><td><code>maxBlockBytes</code></td>   <td>67,108,864 (64 MiB)</td>         <td>One block of a container file after decompression</td></tr>
+    <tr><td><code>maxBlockBytes</code></td>   <td>67,108,864 (64 MiB)</td>         <td>One block of a container file after decompression; in <code>AvroFileStreamReader</code> also a block's compressed size and the header</td></tr>
     <tr><td><code>maxTotalBytes</code></td>   <td>1,073,741,824 (1 GiB)</td>       <td>All blocks of a container file together after decompression</td></tr>
   </tbody>
 </table>
@@ -35,21 +35,24 @@
   <tbody>
     <tr><td><code>maxSchemaBytes</code></td>  <td><code>Schema.parse</code></td>                                 <td><code>LimitExceededException</code></td></tr>
     <tr><td><code>maxSchemaDepth</code></td>  <td><code>Schema.parse</code></td>                                 <td><code>LimitExceededException</code></td></tr>
-    <tr><td><code>maxValueDepth</code></td>   <td><code>AvroCodec</code>: <code>decode</code>, <code>decodeSingleObject</code></td><td><code>LimitExceededException</code></td></tr>
-    <tr><td><code>maxValueDepth</code></td>   <td><code>AvroCodec</code>: <code>encode</code>, <code>encodeSingleObject</code></td><td><code>LimitExceededException</code></td></tr>
+    <tr><td><code>maxValueDepth</code></td>   <td><code>AvroCodec</code>: <code>decode</code>, <code>decodeSingleObject</code>, <code>decodeJson</code></td><td><code>LimitExceededException</code></td></tr>
+    <tr><td><code>maxValueDepth</code></td>   <td><code>AvroCodec</code>: <code>encode</code>, <code>encodeSingleObject</code>, <code>encodeJson</code></td><td><code>LimitExceededException</code></td></tr>
+    <tr><td><code>maxValueDepth</code></td>   <td><code>AvroCodec</code>: <code>decodeJson</code>, the nesting of the text, before it is parsed</td><td><code>LimitExceededException</code></td></tr>
     <tr><td><code>maxZeroSizeItems</code></td><td><code>AvroCodec</code>: decoding an array</td>                 <td><code>LimitExceededException</code></td></tr>
-    <tr><td><code>maxZeroSizeItems</code></td><td><code>AvroFileReader</code>: the record count of a block</td>   <td><code>LimitExceededException</code></td></tr>
-    <tr><td><code>maxBlockBytes</code></td>   <td><code>AvroFileReader</code>: <code>records</code></td>        <td><code>LimitExceededException</code>, while iterating</td></tr>
-    <tr><td><code>maxTotalBytes</code></td>   <td><code>AvroFileReader</code>: <code>records</code></td>        <td><code>LimitExceededException</code>, while iterating</td></tr>
+    <tr><td><code>maxZeroSizeItems</code></td><td><code>AvroFileReader</code>, <code>AvroFileStreamReader</code>: the record count of a block</td>   <td><code>LimitExceededException</code></td></tr>
+    <tr><td><code>maxBlockBytes</code></td>   <td><code>AvroFileReader</code>, <code>AvroFileStreamReader</code>: <code>records</code>, a block's decompressed size, for every compression</td><td><code>LimitExceededException</code>, while iterating, as soon as decompression passes it</td></tr>
+    <tr><td><code>maxBlockBytes</code></td>   <td><code>AvroFileStreamReader</code>: <code>records</code>, a block's declared compressed size</td><td><code>LimitExceededException</code>, before the block is read</td></tr>
+    <tr><td><code>maxBlockBytes</code></td>   <td><code>AvroFileStreamReader.open</code>: the size of the header</td><td><code>LimitExceededException</code>, from <code>open</code></td></tr>
+    <tr><td><code>maxTotalBytes</code></td>   <td><code>AvroFileReader</code>, <code>AvroFileStreamReader</code>: <code>records</code></td>        <td><code>LimitExceededException</code>, while iterating, as soon as decompression passes it</td></tr>
   </tbody>
 </table>
 </div>
 <p>
   <code>LimitExceededException.limit</code> is the name of the field, as in the first column. The
-  limits of an <code>AvroFileReader</code> also parse the file's schema and make the codec of
-  <code>records()</code>; a codec passed to <code>records(codec)</code> decodes with its own
-  limits. <code>AvroFileWriter</code> parses a <code>schemaJson</code> you pass with the limits of
-  its codec.
+  limits of an <code>AvroFileReader</code> or <code>AvroFileStreamReader</code> also parse the
+  file's schema and make the codec of <code>records()</code>; a codec passed to <code>records(codec)</code> decodes with its own
+  limits. <code>AvroFileWriter</code> and <code>AvroFileStreamWriter</code> parse a
+  <code>schemaJson</code> you pass with the limits of their codec.
 </p>
 
 <h2>Always on</h2>

@@ -1,4 +1,4 @@
-<!-- page: title="Errors" track="guide" order=8 summary="The sealed AvroException hierarchy: one subtype per cause, an exhaustive switch over them, what each carries (path, offset, limit, compression), and the few failures that are not AvroExceptions." -->
+<!-- page: title="Errors" track="guide" order=11 summary="The sealed AvroException hierarchy: one subtype per cause, an exhaustive switch over them, what each carries (path, offset, limit, compression), and the few failures that are not AvroExceptions." -->
 <p class="lede">
   Every failure caused by a schema, a value or the bytes you pass is an
   <code>AvroException</code>. The class is <code>sealed</code>, with one subtype per cause, so a
@@ -18,7 +18,7 @@
     <tr><td><code>DecodeException</code></td>                 <td>The bytes are not a valid encoding</td>                     <td><code>offset</code>, <code>path</code> or <code>null</code></td></tr>
     <tr><td><code>EncodeException</code></td>                 <td>A value does not fit its schema</td>                        <td><code>path</code></td></tr>
     <tr><td><code>LimitExceededException</code></td>          <td>Input exceeds one of the <code>AvroLimits</code></td>        <td><code>limit</code></td></tr>
-    <tr><td><code>UnsupportedCompressionException</code></td> <td>A container file uses a compression other than <code>null</code> and <code>deflate</code></td><td><code>compression</code></td></tr>
+    <tr><td><code>UnsupportedCompressionException</code></td> <td>A container file uses a compression other than <code>null</code>, <code>deflate</code>, <code>snappy</code>, <code>bzip2</code>, <code>xz</code> and <code>zstandard</code></td><td><code>compression</code></td></tr>
   </tbody>
 </table>
 </div>
@@ -35,10 +35,10 @@
   <li><strong><code>path</code> of <code>SchemaParseException</code></strong>: where in the schema, as the full name of the record and the index of the field, such as <code>Memo.fields[1].type</code>, or <code>$</code> and an index from the root; <code>null</code> when the text is not JSON.</li>
   <li><strong><code>path</code> of <code>ResolutionException</code></strong>: from the codec's constructor, a place in the schemas, such as <code>Memo.written</code>; from <code>decode</code>, the place in the value, such as <code>$.colour</code>.</li>
   <li><strong><code>offset</code> of <code>DecodeException</code></strong>: the byte at which decoding failed, counted from the start of the bytes being decoded. For the records of a container file, it counts from the start of the decompressed block; for the block structure itself, from the start of the file.</li>
-  <li><strong><code>path</code> of <code>DecodeException</code></strong>: the place in the value, when a logical type cannot be read, such as a <code>timestamp-millis</code> beyond the range of <code>DateTime</code>; <code>null</code> otherwise.</li>
+  <li><strong><code>path</code> of <code>DecodeException</code></strong>: the place in the value, when a logical type cannot be read, such as a <code>timestamp-millis</code> beyond the range of <code>DateTime</code>, and the place in the JSON when <code>decodeJson</code> fails on a value, whose <code>offset</code> is always 0; <code>null</code> otherwise.</li>
   <li><strong><code>path</code> of <code>EncodeException</code></strong>: the place in the value: <code>$</code> is the value, <code>$.written.year</code> a field of a field, <code>$.items[2]</code> an item of an array.</li>
   <li><strong><code>limit</code> of <code>LimitExceededException</code></strong>: the name of the <code>AvroLimits</code> field, such as <code>maxBlockBytes</code>.</li>
-  <li><strong><code>compression</code> of <code>UnsupportedCompressionException</code></strong>: the value of the file's <code>avro.codec</code>, or the argument you passed to <code>AvroFileWriter</code>.</li>
+  <li><strong><code>compression</code> of <code>UnsupportedCompressionException</code></strong>: the value of the file's <code>avro.codec</code>, or the argument you passed to <code>AvroFileWriter</code> or <code>AvroFileStreamWriter</code>.</li>
 </ul>
 
 <h2>An exhaustive switch</h2>
@@ -115,7 +115,7 @@ cannot read lz4 files</code></pre>
   <tbody>
     <tr><td><code>ArgumentError</code></td><td><code>AvroFileWriter</code> gets a <code>metadata</code> key starting with <code>avro.</code>, a <code>syncMarker</code> that is not 16 bytes, or a <code>schemaJson</code> with another canonical form than the codec's writer schema</td></tr>
     <tr><td><code>ArgumentError</code></td><td><code>crc64FromBytes</code> gets anything but 8 bytes</td></tr>
-    <tr><td><code>StateError</code></td>   <td><code>add</code>, <code>flush</code> or <code>close</code> is called on an <code>AvroFileWriter</code> that is closed</td></tr>
+    <tr><td><code>StateError</code></td>   <td><code>add</code>, <code>flush</code> or <code>close</code> is called on an <code>AvroFileWriter</code> or <code>AvroFileStreamWriter</code> that is closed, or <code>records</code> of an <code>AvroFileStreamReader</code> a second time or after <code>cancel</code></td></tr>
   </tbody>
 </table>
 </div>
