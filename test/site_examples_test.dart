@@ -155,7 +155,7 @@ void main() {
           final file = File(
             '${dir.path}/${name.replaceAll(RegExp('[^A-Za-z0-9_]'), '_')}.dart',
           )..writeAsStringSync(b.code);
-          return Process.run(Platform.resolvedExecutable, ['run', file.path]);
+          return Process.run(_dart, ['run', file.path]);
         },
     }, 2);
   });
@@ -176,3 +176,11 @@ void main() {
     });
   }
 }
+
+/// The `dart` executable. Under `dart test` it is the running executable; under
+/// `flutter test`, as in the Dart gate of paxel/gates, the running executable is the Flutter
+/// test runner, and `dart` comes from the PATH, next to `flutter`.
+final String _dart =
+    RegExp(r'(^|[/\\])dart(\.exe)?$').hasMatch(Platform.resolvedExecutable)
+    ? Platform.resolvedExecutable
+    : 'dart';
