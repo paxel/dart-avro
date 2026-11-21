@@ -1,0 +1,143 @@
+<!-- page: title="Errors" track="guide" order=8 summary="The sealed AvroException hierarchy: one subtype per cause, an exhaustive switch over them, what each carries (path, offset, limit, compression), and the few failures that are not AvroExceptions." -->
+<p class="lede">
+  Every failure caused by a schema, a value or the bytes you pass is an
+  <code>AvroException</code>. The class is <code>sealed</code>, with one subtype per cause, so a
+  <code>switch</code> over it is checked by the analyzer: when a cause is added, your code stops
+  compiling instead of missing it.
+</p>
+
+<h2>The hierarchy</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Exception</th>                                    <th>Cause</th>                                                    <th>Carries</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>SchemaParseException</code></td>            <td>The text is not JSON, or not a valid Avro schema</td>       <td><code>path</code>, or <code>null</code></td></tr>
+    <tr><td><code>ResolutionException</code></td>             <td>A writer schema does not resolve against a reader schema</td><td><code>path</code></td></tr>
+    <tr><td><code>DecodeException</code></td>                 <td>The bytes are not a valid encoding</td>                     <td><code>offset</code>, <code>path</code> or <code>null</code></td></tr>
+    <tr><td><code>EncodeException</code></td>                 <td>A value does not fit its schema</td>                        <td><code>path</code></td></tr>
+    <tr><td><code>LimitExceededException</code></td>          <td>Input exceeds one of the <code>AvroLimits</code></td>        <td><code>limit</code></td></tr>
+    <tr><td><code>UnsupportedCompressionException</code></td> <td>A container file uses a compression other than <code>null</code> and <code>deflate</code></td><td><code>compression</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  Each has a <code>message</code> that says what went wrong in words, and a
+  <code>toString()</code> that adds where, such as
+  <code>EncodeException at $.age: expected int for int, got String</code>. The
+  <a href="../reference/exceptions.html">exception reference</a> lists, for each type, every
+  place that throws it.
+</p>
+
+<h2>What the fields say</h2>
+<ul>
+  <li><strong><code>path</code> of <code>SchemaParseException</code></strong>: where in the schema, as the full name of the record and the index of the field, such as <code>Memo.fields[1].type</code>, or <code>$</code> and an index from the root; <code>null</code> when the text is not JSON.</li>
+  <li><strong><code>path</code> of <code>ResolutionException</code></strong>: from the codec's constructor, a place in the schemas, such as <code>Memo.written</code>; from <code>decode</code>, the place in the value, such as <code>$.colour</code>.</li>
+  <li><strong><code>offset</code> of <code>DecodeException</code></strong>: the byte at which decoding failed, counted from the start of the bytes being decoded. For the records of a container file, it counts from the start of the decompressed block; for the block structure itself, from the start of the file.</li>
+  <li><strong><code>path</code> of <code>DecodeException</code></strong>: the place in the value, when a logical type cannot be read, such as a <code>timestamp-millis</code> beyond the range of <code>DateTime</code>; <code>null</code> otherwise.</li>
+  <li><strong><code>path</code> of <code>EncodeException</code></strong>: the place in the value: <code>$</code> is the value, <code>$.written.year</code> a field of a field, <code>$.items[2]</code> an item of an array.</li>
+  <li><strong><code>limit</code> of <code>LimitExceededException</code></strong>: the name of the <code>AvroLimits</code> field, such as <code>maxBlockBytes</code>.</li>
+  <li><strong><code>compression</code> of <code>UnsupportedCompressionException</code></strong>: the value of the file's <code>avro.codec</code>, or the argument you passed to <code>AvroFileWriter</code>.</li>
+</ul>
+
+<h2>An exhaustive switch</h2>
+<p>
+  Catch <code>AvroException</code> where untrusted bytes come in, and switch over it to decide what
+  to do. The example makes each of the six failures happen once.
+</p>
+<pre data-example="guide/errors-switch"><code class="language-dart">import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:avro/avro.dart';
+
+String explain(AvroException e) =&gt; switch (e) {
+  SchemaParseException(:final path) =&gt; 'bad schema at $path',
+  ResolutionException(:final path) =&gt; 'schemas do not resolve at $path',
+  DecodeException(:final offset) =&gt; 'bad bytes at offset $offset',
+  EncodeException(:final path) =&gt; 'bad value at $path',
+  LimitExceededException(:final limit) =&gt; 'over $limit',
+  UnsupportedCompressionException(:final compression) =&gt; 'cannot read $compression files',
+};
+
+/// A container file header whose blocks claim to be compressed with snappy.
+Uint8List snappyFile() {
+  final metadata = AvroCodec(writer: Schema.parse('{"type": "map", "values": "bytes"}'));
+  return Uint8List.fromList([
+    ...ascii.encode('Obj'), 1,
+    ...metadata.encode({
+      'avro.codec': utf8.encode('snappy'),
+      'avro.schema': utf8.encode('"string"'),
+    }),
+    ...List.filled(16, 0),
+  ]);
+}
+
+void main() {
+  final user = Schema.parse('''
+  {"type": "record", "name": "User", "fields": [{"name": "age", "type": "int"}]}
+  ''');
+  final codec = AvroCodec(writer: user);
+
+  final failures = &lt;void Function()&gt;[
+    () =&gt; Schema.parse('{"type": "record", "name": "User", "fields": [{"name": "age"}]}'),
+    () =&gt; AvroCodec(writer: user, reader: Schema.parse('"string"')),
+    () =&gt; codec.decode(Uint8List.fromList([0x80])),
+    () =&gt; codec.encode({'age': 'old'}),
+    () =&gt; Schema.parse('"int"', limits: const AvroLimits(maxSchemaBytes: 3)),
+    () =&gt; AvroFileReader(snappyFile()),
+  ];
+  for (final fail in failures) {
+    try {
+      fail();
+    } on AvroException catch (e) {
+      print(explain(e));
+    }
+  }
+}</code></pre>
+<pre data-example-output="guide/errors-switch"><code>bad schema at User.fields[0]
+schemas do not resolve at string
+bad bytes at offset 1
+bad value at $.age
+over maxSchemaBytes
+cannot read snappy files</code></pre>
+
+<h2>Errors that are not <code>AvroException</code></h2>
+<p>
+  A wrong argument or a wrong use of an object is a bug in the calling code, not bad input, and
+  throws one of Dart's own errors. Do not catch these at a boundary; fix the call.
+</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Error</th>                <th>Thrown when</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>ArgumentError</code></td><td><code>AvroFileWriter</code> gets a <code>metadata</code> key starting with <code>avro.</code>, a <code>syncMarker</code> that is not 16 bytes, or a <code>schemaJson</code> with another canonical form than the codec's writer schema</td></tr>
+    <tr><td><code>ArgumentError</code></td><td><code>crc64FromBytes</code> gets anything but 8 bytes</td></tr>
+    <tr><td><code>StateError</code></td>   <td><code>add</code>, <code>flush</code> or <code>close</code> is called on an <code>AvroFileWriter</code> that is closed</td></tr>
+  </tbody>
+</table>
+</div>
+<pre data-example="guide/errors-usage"><code class="language-dart">import 'dart:typed_data';
+
+import 'package:avro/avro.dart';
+
+void main() {
+  final codec = AvroCodec(writer: Schema.parse('"string"'));
+  try {
+    AvroFileWriter(codec, metadata: {'avro.owner': Uint8List(0)});
+  } on ArgumentError catch (e) {
+    print(e.message);
+  }
+
+  final writer = AvroFileWriter(codec)..add('one');
+  writer.close();
+  try {
+    writer.add('two');
+  } on StateError catch (e) {
+    print(e.message);
+  }
+}</code></pre>
+<pre data-example-output="guide/errors-usage"><code>keys starting with avro. are reserved
+the writer is closed</code></pre>

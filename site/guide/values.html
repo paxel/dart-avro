@@ -1,0 +1,253 @@
+<!-- page: title="Values and unions" track="guide" order=2 summary="The plain Dart values encode accepts and decode returns, why records are strict, how a union branch is inferred, and when to name it with Branch." -->
+<p class="lede">
+  An <code>AvroCodec</code> works with plain Dart values: maps, lists, strings, numbers and a few
+  classes of the package for logical types. This page shows what <code>encode</code> accepts, how
+  it picks the branch of a union, and what <code>decode</code> gives back.
+</p>
+
+<h2>The plain values</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Avro type</th>          <th><code>encode</code> accepts</th>                               <th><code>decode</code> returns</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>null</code></td>   <td><code>null</code></td>                                         <td><code>null</code></td></tr>
+    <tr><td><code>boolean</code></td><td><code>bool</code></td>                                         <td><code>bool</code></td></tr>
+    <tr><td><code>int</code></td>    <td><code>int</code> within 32 bits</td>                           <td><code>int</code></td></tr>
+    <tr><td><code>long</code></td>   <td><code>int</code></td>                                          <td><code>int</code></td></tr>
+    <tr><td><code>float</code></td>  <td><code>num</code></td>                                          <td><code>double</code></td></tr>
+    <tr><td><code>double</code></td> <td><code>num</code></td>                                          <td><code>double</code></td></tr>
+    <tr><td><code>bytes</code></td>  <td><code>Uint8List</code></td>                                    <td><code>Uint8List</code></td></tr>
+    <tr><td><code>string</code></td> <td><code>String</code>, without unpaired surrogates</td>          <td><code>String</code></td></tr>
+    <tr><td><code>record</code></td> <td><code>Map&lt;String, Object?&gt;</code> of exactly its fields</td><td><code>Map&lt;String, Object?&gt;</code> in field order</td></tr>
+    <tr><td><code>enum</code></td>   <td><code>String</code>, one of the symbols</td>                   <td><code>String</code></td></tr>
+    <tr><td><code>array</code></td>  <td><code>List&lt;Object?&gt;</code></td>                          <td><code>List&lt;Object?&gt;</code></td></tr>
+    <tr><td><code>map</code></td>    <td><code>Map&lt;String, Object?&gt;</code></td>                   <td><code>Map&lt;String, Object?&gt;</code></td></tr>
+    <tr><td><code>fixed</code></td>  <td><code>Uint8List</code> of exactly the size</td>                <td><code>Uint8List</code></td></tr>
+    <tr><td>union</td>               <td>the value of a branch, or a <code>Branch</code></td>           <td>the value of the branch</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  The logical types have their own values, such as <code>DateTime</code> for
+  <code>timestamp-millis</code> and <code>AvroDecimal</code> for <code>decimal</code>; the
+  <a href="../reference/values.html">value mapping</a> lists them all. A <code>List&lt;int&gt;</code>
+  is not <code>bytes</code>: use <code>Uint8List</code>, from <code>dart:typed_data</code>.
+</p>
+<pre data-example="guide/values-roundtrip"><code class="language-dart">import 'dart:typed_data';
+
+import 'package:avro/avro.dart';
+
+void main() {
+  final codec = AvroCodec(writer: Schema.parse('''
+  {"type": "record", "name": "Sample", "fields": [
+    {"name": "ok", "type": "boolean"},
+    {"name": "count", "type": "int"},
+    {"name": "ratio", "type": "float"},
+    {"name": "raw", "type": "bytes"},
+    {"name": "unit", "type": {"type": "enum", "name": "Unit", "symbols": ["C", "F"]}},
+    {"name": "points", "type": {"type": "array", "items": "long"}},
+    {"name": "labels", "type": {"type": "map", "values": "string"}}
+  ]}
+  '''));
+
+  final bytes = codec.encode({
+    'ok': true,
+    'count': 3,
+    'ratio': 1, // a num is fine for float and double
+    'raw': Uint8List.fromList([0xca, 0xfe]),
+    'unit': 'C',
+    'points': [1, 2, 3],
+    'labels': {'site': 'roof'},
+  });
+  print(codec.decode(bytes));
+}</code></pre>
+<pre data-example-output="guide/values-roundtrip"><code>{ok: true, count: 3, ratio: 1.0, raw: [202, 254], unit: C, points: [1, 2, 3], labels: {site: roof}}</code></pre>
+
+<h2>Records are strict</h2>
+<p>
+  The map of a record must hold every field of the record and nothing else. A missing field
+  throws <code>EncodeException</code>, even when the field has a default: defaults serve
+  <a href="resolution.html">schema resolution</a> only, as in the specification. A key that names
+  no field throws as well, so a typo does not vanish silently.
+</p>
+<p>
+  The exception's <code>path</code> names the place in the value: <code>$</code> is the value
+  itself, <code>$.points[1]</code> the second item of the field <code>points</code>,
+  <code>$.labels.site</code> the entry <code>site</code> of a map.
+</p>
+<pre data-example="guide/values-strict"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final codec = AvroCodec(writer: Schema.parse('''
+  {"type": "record", "name": "User", "fields": [
+    {"name": "name", "type": "string"},
+    {"name": "age", "type": "int", "default": 0},
+    {"name": "scores", "type": {"type": "array", "items": "int"}}
+  ]}
+  '''));
+
+  for (final value in [
+    {'name': 'Ada', 'scores': &lt;Object?&gt;[]},
+    {'name': 'Ada', 'age': 36, 'scores': &lt;Object?&gt;[], 'email': 'ada@example.com'},
+    {'name': 'Ada', 'age': 36, 'scores': [1, 'two']},
+    {'name': 'Ada', 'age': 1 &lt;&lt; 40, 'scores': &lt;Object?&gt;[]},
+  ]) {
+    try {
+      codec.encode(value);
+    } on EncodeException catch (e) {
+      print(e);
+    }
+  }
+}</code></pre>
+<pre data-example-output="guide/values-strict"><code>EncodeException at $: the field "age" is missing
+EncodeException at $: "email" is not a field of User
+EncodeException at $.scores[1]: expected int for int, got String
+EncodeException at $.age: 1099511627776 does not fit 32 bits</code></pre>
+
+<h2>How a union branch is chosen</h2>
+<p>
+  A value of a union is encoded as the index of its <a href="../start/glossary.html#branch">branch</a>
+  and the value. When you pass a plain value, the codec checks it against every branch:
+</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Branch</th>                                    <th>Fits</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>null</code></td>                         <td><code>null</code></td></tr>
+    <tr><td><code>boolean</code></td>                      <td>a <code>bool</code></td></tr>
+    <tr><td><code>int</code></td>                          <td>an <code>int</code> within 32 bits</td></tr>
+    <tr><td><code>long</code></td>                         <td>any <code>int</code></td></tr>
+    <tr><td><code>float</code>, <code>double</code></td>   <td>a <code>double</code>, not an <code>int</code></td></tr>
+    <tr><td><code>bytes</code></td>                        <td>a <code>Uint8List</code></td></tr>
+    <tr><td><code>string</code></td>                       <td>a <code>String</code></td></tr>
+    <tr><td><code>fixed</code></td>                        <td>a <code>Uint8List</code> of its size</td></tr>
+    <tr><td><code>enum</code></td>                         <td>a <code>String</code> that is one of its symbols</td></tr>
+    <tr><td><code>array</code></td>                        <td>a <code>List</code> that is not a <code>Uint8List</code></td></tr>
+    <tr><td><code>map</code></td>                          <td>a <code>Map&lt;String, Object?&gt;</code></td></tr>
+    <tr><td><code>record</code></td>                       <td>a <code>Map&lt;String, Object?&gt;</code> with exactly its field names as keys</td></tr>
+    <tr><td>a logical type</td>                            <td>a value of the logical type, such as a <code>DateTime</code>; a <code>uuid</code> a <code>String</code> in UUID form</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  The check looks only at the outside of the value. If exactly one branch fits, the codec takes
+  it, and the value must then encode with that branch. If none fits, <code>encode</code> throws
+  and lists the branches. If more than one fits, <code>encode</code> throws and names the
+  candidates; the codec never guesses.
+</p>
+<pre data-example="guide/values-inference"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final codec = AvroCodec(writer: Schema.parse('''
+  ["null", "string", "double",
+   {"type": "record", "name": "Point", "fields": [{"name": "x", "type": "int"}]}]
+  '''));
+
+  for (final value in [null, 'text', 2.5, {'x': 1}, 7, true]) {
+    try {
+      final bytes = codec.encode(value);
+      print('$value: branch ${bytes.first ~/ 2}');
+    } on EncodeException catch (e) {
+      print('$value: ${e.message}');
+    }
+  }
+}</code></pre>
+<pre data-example-output="guide/values-inference"><code>null: branch 0
+text: branch 1
+2.5: branch 2
+{x: 1}: branch 3
+7: no branch of the union fits int; it has null, string, double, Point
+true: no branch of the union fits bool; it has null, string, double, Point</code></pre>
+<p>
+  The first byte of a union's encoding is the branch index as a zig-zag varint, which is why the
+  example halves it. Note the <code>7</code>: an <code>int</code> does not fit a
+  <code>double</code> branch, although a plain <code>double</code> schema accepts one. Pass
+  <code>7.0</code> instead.
+</p>
+
+<h2>Naming the branch with <code>Branch</code></h2>
+<p>
+  Some unions have branches that the same value fits. The common ones:
+</p>
+<ul>
+  <li><code>["int", "long"]</code>: any <code>int</code> within 32 bits.</li>
+  <li><code>["float", "double"]</code>: every <code>double</code>.</li>
+  <li>An <code>enum</code> and <code>string</code>: a symbol.</li>
+  <li>A <code>fixed</code> and <code>bytes</code>: a <code>Uint8List</code> of the fixed's size.</li>
+  <li>A <code>record</code> and a <code>map</code>, or two records with the same field names.</li>
+</ul>
+<p>
+  For those, wrap the value: <code>Branch(name, value)</code>. The name is the full name of a
+  named type, such as <code>com.example.Point</code>, or the type name of any other:
+  <code>long</code>, <code>array</code>, <code>map</code>. A branch with a logical type is named by
+  its underlying type, so a <code>timestamp-millis</code> branch is <code>long</code>. A
+  <code>Branch</code> is checked against its branch only. A name the union does not have, or a
+  <code>Branch</code> where the schema is not a union, throws <code>EncodeException</code>.
+</p>
+<pre data-example="guide/values-branch"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final codec = AvroCodec(writer: Schema.parse('''
+  [{"type": "enum", "name": "com.example.Colour", "symbols": ["RED", "GREEN"]}, "string"]
+  '''));
+
+  print(codec.encode('blue')); // only string fits
+  try {
+    codec.encode('RED');
+  } on EncodeException catch (e) {
+    print(e.message);
+  }
+  print(codec.encode(const Branch('com.example.Colour', 'RED')));
+  print(codec.encode(const Branch('string', 'RED')));
+  print(codec.decode(codec.encode(const Branch('string', 'RED'))));
+}</code></pre>
+<pre data-example-output="guide/values-branch"><code>[2, 8, 98, 108, 117, 101]
+more than one branch fits; wrap the value in a Branch of one of com.example.Colour, string
+[0, 0]
+[2, 6, 82, 69, 68]
+RED</code></pre>
+
+<h2>What decode returns</h2>
+<p>
+  <code>decode</code> returns plain values only, never a <code>Branch</code>. Records come back as
+  maps with one entry per field of the reader schema, in its field order; lists and maps are new,
+  growable objects that you may change. Two branches that decode to the same kind of value, such
+  as two records with the same fields, cannot be told apart afterwards. If that matters, give the
+  records different field names, or wrap the value in a record with an enum that says which it
+  is.
+</p>
+<p>
+  <code>decode</code> reads exactly one datum: bytes left over after it throw
+  <code>DecodeException</code>, and so does any byte that is not a valid encoding, with the
+  <code>offset</code> of the failing byte. For several datums in a row, use a
+  <a href="container-files.html">container file</a>.
+</p>
+<pre data-example="guide/values-decode"><code class="language-dart">import 'dart:typed_data';
+
+import 'package:avro/avro.dart';
+
+void main() {
+  final codec = AvroCodec(writer: Schema.parse('["null", "long"]'));
+
+  print(codec.decode(Uint8List.fromList([2, 84]))); // branch 1, the long 42
+
+  for (final bytes in [
+    [2, 84, 0], // one byte too many
+    [4, 0], // there is no branch 2
+    [2], // the long is missing
+  ]) {
+    try {
+      codec.decode(Uint8List.fromList(bytes));
+    } on DecodeException catch (e) {
+      print('${e.offset}: ${e.message}');
+    }
+  }
+}</code></pre>
+<pre data-example-output="guide/values-decode"><code>42
+2: 1 bytes left over after the datum
+0: the union has no branch 2
+1: needs 1 bytes, but only 0 are left</code></pre>

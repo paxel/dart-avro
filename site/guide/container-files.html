@@ -1,0 +1,193 @@
+<!-- page: title="Container files" track="guide" order=5 summary="Write object container files with AvroFileWriter (compression, metadata, schemaJson, syncMarker, blockSize, flush and close) and read them with AvroFileReader: the header first, the records lazily, with your own codec." -->
+<p class="lede">
+  A <a href="../start/glossary.html#container-file">container file</a> holds many records of one
+  schema, with the schema in its header. It is what other Avro libraries call an
+  <code>.avro</code> file. <code>AvroFileWriter</code> writes one in memory and
+  <code>AvroFileReader</code> reads one from memory.
+</p>
+
+<h2>The layout</h2>
+<p>
+  A file starts with its <a href="../start/glossary.html#header">header</a>: the magic bytes
+  <code>Obj</code> and <code>1</code>, the <a href="../start/glossary.html#metadata">metadata</a>,
+  and a 16-byte <a href="../start/glossary.html#sync-marker">sync marker</a>. The metadata maps
+  string keys to bytes; <code>avro.schema</code> holds the writer schema as JSON text and
+  <code>avro.codec</code> the <a href="../start/glossary.html#compression">compression</a>.
+  <a href="../start/glossary.html#block">Blocks</a> follow: each one is a count of records, their
+  size, the records compressed together, and the sync marker.
+</p>
+
+<h2>Write a file</h2>
+<p>
+  <code>AvroFileWriter(codec, …)</code> writes records with the codec's writer schema.
+  <code>add(record)</code> encodes one record into the current block, <code>flush()</code> ends
+  the block, and <code>close()</code> ends the last block and returns the whole file as a
+  <code>Uint8List</code>. After <code>close</code>, the writer throws <code>StateError</code>.
+</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Argument</th>            <th>Default</th>                       <th>What it does</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>compression</code></td><td><code>'null'</code></td>      <td><code>'null'</code> or <code>'deflate'</code> (raw DEFLATE, as the specification says); anything else throws <code>UnsupportedCompressionException</code></td></tr>
+    <tr><td><code>metadata</code></td>   <td>none</td>                      <td>Your entries, <code>Map&lt;String, Uint8List&gt;</code>, written first and in your order; a key starting with <code>avro.</code> throws <code>ArgumentError</code></td></tr>
+    <tr><td><code>schemaJson</code></td> <td>the writer schema's <code>jsonText</code></td><td>The text of <code>avro.schema</code>, written exactly as given; it must have the canonical form of the codec's writer schema, or it throws <code>ArgumentError</code></td></tr>
+    <tr><td><code>syncMarker</code></td> <td>16 random bytes</td>            <td>The sync marker; any other length than 16 throws <code>ArgumentError</code></td></tr>
+    <tr><td><code>blockSize</code></td>  <td>64 KiB</td>                    <td>The size before compression at which a block ends by itself, after the record that reaches it</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  The header is written in this order: your metadata, then <code>avro.codec</code>, always, even
+  for <code>null</code>, then <code>avro.schema</code>. <code>add</code> throws
+  <code>EncodeException</code> for a record that does not fit the schema, and leaves the file as
+  it was, so you can skip the record and go on.
+</p>
+<pre data-example="guide/container-write"><code class="language-dart">import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:avro/avro.dart';
+
+void main() {
+  final codec = AvroCodec(writer: Schema.parse('''
+  {"type": "record", "name": "Event", "fields": [
+    {"name": "id", "type": "long"}, {"name": "kind", "type": "string"}
+  ]}
+  '''));
+
+  final writer = AvroFileWriter(
+    codec,
+    compression: 'deflate',
+    metadata: {'app.name': utf8.encode('example'), 'app.version': utf8.encode('1')},
+    syncMarker: Uint8List.fromList(List.generate(16, (i) =&gt; i)),
+  );
+  writer.add({'id': 1, 'kind': 'start'});
+  try {
+    writer.add({'id': 2}); // no kind: rejected, the file is unchanged
+  } on EncodeException catch (e) {
+    print(e);
+  }
+  writer.flush(); // ends the first block
+  writer.add({'id': 3, 'kind': 'stop'});
+  final file = writer.close();
+
+  final reader = AvroFileReader(file);
+  print(reader.header.metadata.keys.toList());
+  print(reader.header.compression);
+  print(reader.header.syncMarker);
+  print(reader.records().toList());
+}</code></pre>
+<pre data-example-output="guide/container-write"><code>EncodeException at $: the field "kind" is missing
+[app.name, app.version, avro.codec, avro.schema]
+deflate
+[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+[{id: 1, kind: start}, {id: 3, kind: stop}]</code></pre>
+<p>
+  With the random default sync marker, no two files are alike, even with the same records. Pass a
+  fixed <code>syncMarker</code> when you need byte-exact files, for tests or for published example
+  files.
+</p>
+
+<h2>Read the header first</h2>
+<p>
+  <code>AvroFileReader(bytes, limits:)</code> reads the header when it is made, and nothing else.
+  So you can look at the metadata, the schema and the compression before you decode any record.
+  The constructor throws <code>DecodeException</code> if the bytes are not a container file, and
+  <code>UnsupportedCompressionException</code> if the blocks use a compression other than
+  <code>null</code> and <code>deflate</code>, such as <code>snappy</code>.
+</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th><code>header.</code></th>   <th>Holds</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>metadata</code></td>  <td>Every entry, <code>avro.schema</code> and <code>avro.codec</code> included, in the order of the file, as <code>Uint8List</code></td></tr>
+    <tr><td><code>schemaJson</code></td><td>The text of <code>avro.schema</code></td></tr>
+    <tr><td><code>compression</code></td><td><code>null</code> or <code>deflate</code>; <code>null</code> when the file has no <code>avro.codec</code></td></tr>
+    <tr><td><code>syncMarker</code></td><td>The 16 bytes that end every block</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Read the records</h2>
+<p>
+  <code>records()</code> returns a lazy <code>Iterable</code>. Each time the iteration reaches a
+  block, that block is checked against its sync marker, decompressed, and decoded record by record;
+  only one decompressed block is held at a time. Everything that can go wrong in the blocks is
+  thrown while you iterate, after the records before it have been returned:
+  <code>DecodeException</code> for a malformed block and <code>LimitExceededException</code> for a
+  block over the <a href="limits.html">limits</a>.
+</p>
+<p>
+  Without an argument, <code>records()</code> parses the file's own schema, with the reader's
+  limits, when the iteration starts; a schema text that is not valid throws
+  <code>SchemaParseException</code> then. Each iteration starts again from the first block.
+</p>
+
+<h2>Decode with your own codec</h2>
+<p>
+  <code>records(codec)</code> decodes with a codec you pass. The codec's writer schema must be the
+  schema the file was written with: the reader does not compare them, and a codec of another
+  schema reads garbage or throws. There are two safe ways to get one:
+</p>
+<ul>
+  <li>Parse <code>header.schemaJson</code> as the writer schema, and pass your schema as the reader, so that the file's schema is <a href="resolution.html">resolved</a> against yours.</li>
+  <li>If you expect files of one known schema, compare the canonical form of <code>header.schemaJson</code> with your schema's, reject the file if they differ, and decode with your own codec.</li>
+</ul>
+<p>
+  The second way suits files from untrusted senders: the file's schema is parsed once to compare it,
+  and the records are decoded with a codec you made and checked.
+</p>
+<pre data-example="guide/container-read"><code class="language-dart">import 'dart:typed_data';
+
+import 'package:avro/avro.dart';
+
+final expected = Schema.parse('''
+{"type": "record", "name": "Event", "fields": [
+  {"name": "id", "type": "long"}, {"name": "kind", "type": "string"}
+]}
+''');
+final codec = AvroCodec(writer: expected);
+
+List&lt;Object?&gt; readEvents(Uint8List bytes) {
+  final reader = AvroFileReader(bytes);
+  final written = Schema.parse(reader.header.schemaJson);
+  if (written.canonicalForm != expected.canonicalForm) {
+    throw FormatException('not a file of events: ${reader.header.schemaJson}');
+  }
+  return reader.records(codec).toList();
+}
+
+void main() {
+  // Another program wrote the file, with its own spacing and a doc.
+  final other = AvroCodec(writer: Schema.parse('''
+  {"type": "record", "name": "Event", "doc": "One event.",
+   "fields": [{"name": "id", "type": "long"}, {"name": "kind", "type": "string"}]}
+  '''));
+  final writer = AvroFileWriter(other)
+    ..add({'id': 1, 'kind': 'start'})
+    ..add({'id': 2, 'kind': 'stop'});
+  print(readEvents(writer.close()));
+
+  final strings = AvroFileWriter(AvroCodec(writer: Schema.parse('"string"')))..add('x');
+  try {
+    readEvents(strings.close());
+  } on FormatException catch (e) {
+    print(e.message);
+  }
+}</code></pre>
+<pre data-example-output="guide/container-read"><code>[{id: 1, kind: start}, {id: 2, kind: stop}]
+not a file of events: "string"</code></pre>
+<p>
+  A codec passed to <code>records</code> keeps its own limits for the values it decodes; the
+  reader's limits bound the blocks.
+</p>
+
+<h2>Storing a file</h2>
+<p>
+  Both classes work on bytes in memory. Read and write the bytes with <code>dart:io</code>, for
+  example <code>File('events.avro').readAsBytesSync()</code>. The whole file is in memory while it
+  is read; of its records, only one decompressed block at a time.
+</p>

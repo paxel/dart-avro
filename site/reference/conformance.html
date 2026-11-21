@@ -1,0 +1,135 @@
+<!-- page: title="Spec conformance" track="reference" order=4 summary="What of Avro 1.12 version 0.1.0 implements and what it does not, the test oracles (Apache test data, AXT examples, the Python avro interop job), what has no second implementation, the big-decimal layout, and fuzzing." -->
+<p class="lede">
+  What of the <a href="https://avro.apache.org/docs/1.12.0/specification/">Avro 1.12
+  specification</a> version 0.1.0 implements, and how that is checked.
+</p>
+
+<h2>In 0.1.0</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Part of the specification</th>                  <th>Status</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Schema declaration: primitive, complex and named types, aliases, defaults</td>  <td>Complete</td></tr>
+    <tr><td>Logical types</td>                              <td>All of 1.12: <code>decimal</code>, <code>big-decimal</code>, <code>uuid</code>, <code>date</code>, <code>time-millis</code>, <code>time-micros</code>, <code>timestamp-millis</code>, <code>timestamp-micros</code>, <code>timestamp-nanos</code>, <code>local-timestamp-millis</code>, <code>-micros</code>, <code>-nanos</code>, <code>duration</code></td></tr>
+    <tr><td>Binary encoding</td>                            <td>Complete; array and map blocks with a negative count and a byte size are read</td></tr>
+    <tr><td>Single-object encoding</td>                     <td>Complete</td></tr>
+    <tr><td>Schema resolution</td>                          <td>Complete</td></tr>
+    <tr><td>Parsing Canonical Form</td>                     <td>Complete</td></tr>
+    <tr><td>Fingerprints</td>                               <td>CRC-64-AVRO, MD5, SHA-256</td></tr>
+    <tr><td>Object container files</td>                     <td>Read and write, compression <code>null</code> and <code>deflate</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Not in 0.1.0</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Part of the specification</th>                            <th>What happens instead</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>JSON encoding</td>                                        <td>Not available</td></tr>
+    <tr><td>The compressions <code>snappy</code>, <code>bzip2</code>, <code>xz</code>, <code>zstandard</code></td><td>A file that uses one throws <code>UnsupportedCompressionException</code> when the reader is made</td></tr>
+    <tr><td>The IPC/RPC protocol and protocol declarations</td>        <td>Not available; an <code>error</code> type is parsed and encoded as a record</td></tr>
+    <tr><td>Code generation of typed classes</td>                     <td>Values are <a href="values.html">generic Dart values</a></td></tr>
+    <tr><td>Sort order</td>                                           <td>A field's <code>order</code> is parsed and kept, but nothing compares by it</td></tr>
+  </tbody>
+</table>
+</div>
+<p>These may follow as minor versions. The package runs on the Dart VM and AOT, not on Flutter web.</p>
+
+<h2>Behaviour worth knowing</h2>
+<ul>
+  <li>A union default is the value of the first branch it fits.</li>
+  <li>A writer schema read as a reader union takes the first reader branch it matches, with promotions counted as matches: an <code>int</code> read as <code>["double", "long"]</code> becomes a <code>double</code>.</li>
+  <li>Named types match by their name without the namespace, or by the reader's aliases.</li>
+  <li>A logical type that the package does not know, or that is invalid, is read as its underlying type.</li>
+  <li><code>encode</code> does not fill in defaults; every record field must be given.</li>
+</ul>
+
+<h2>The test oracles</h2>
+<p>
+  <code>dart test</code> needs nothing but Dart. It checks the package against data that others
+  wrote, so that it does not only agree with itself.
+</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Oracle</th>                                                    <th>What it checks</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Apache <code>schema-tests.txt</code></td>                     <td>The canonical form and CRC-64-AVRO fingerprint of every schema in it</td></tr>
+    <tr><td>Apache <code>interop.avsc</code></td>                         <td>Parsing and round trips of the Apache interop schema</td></tr>
+    <tr><td>Apache <code>weather.avro</code>, <code>weather-deflate.avro</code>, <code>weather.json</code></td><td>Reading Apache's container files, compressed with <code>null</code> and <code>deflate</code>, to the records of <code>weather.json</code></td></tr>
+    <tr><td>Apache <code>syncInMeta.avro</code></td>                      <td>A file whose metadata contains its own sync marker</td></tr>
+    <tr><td>AXT examples</td>                                             <td>Canonical forms, a single-object message of 210 bytes and a container file of 5,020 bytes, written by fastavro 1.13.1</td></tr>
+    <tr><td>Hand-written cases</td>                                       <td>Byte-exact encodings worked out from the specification, for every type and logical type</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  The Apache files are copied unchanged from the Apache Avro repository, tag
+  <code>release-1.12.2</code>, under the Apache License 2.0; <code>weather-deflate.avro</code>,
+  which that tag lacks, comes from a later commit (AVRO-4172). The AXT examples come from
+  <a href="https://github.com/paxel/axt">AXT</a> release v0.1.0, <code>spec/envelope.md</code>,
+  section 10.
+</p>
+
+<h2>Interoperability with Python avro</h2>
+<p>
+  A separate CI job round-trips data with the Python <code>avro</code> package 1.12.2, the
+  official Apache library: Python writes and Dart reads, then Dart writes and Python reads. It
+  covers four cases: the Apache interop schema, the logical types Python supports, a schema
+  resolution with promotions, fields in another order, defaults and an enum default, and a union of
+  primitives, two records and a map. Each case is compared as a container file with
+  <code>null</code>, one with <code>deflate</code>, and as single datums: 12 comparisons in each
+  direction, all passing.
+</p>
+<p>Two gaps of Python avro 1.12.2 are left out of the job; the Dart tests cover both:</p>
+<ul>
+  <li>It writes a boolean in a union of <code>boolean</code> and <code>double</code> as a double.</li>
+  <li>It does not resolve an unknown enum symbol to the reader's default.</li>
+</ul>
+<p>
+  The job compares data, not fingerprints: Python avro 1.12.2 computes some canonical forms
+  wrongly, such as <code>{"type":"string"}</code> for a primitive with a logical type. The
+  fingerprints are pinned by <code>schema-tests.txt</code>.
+</p>
+
+<h2>What has no second implementation</h2>
+<p>
+  Python avro does not support everything. These parts are checked by the hand-written cases from
+  the specification only:
+</p>
+<ul>
+  <li>single-object encoding, which the AXT example message also checks, as written by fastavro;</li>
+  <li><code>timestamp-nanos</code>;</li>
+  <li><code>local-timestamp-millis</code>, <code>-micros</code> and <code>-nanos</code>;</li>
+  <li><code>big-decimal</code>;</li>
+  <li><code>duration</code>;</li>
+  <li><code>uuid</code> on <code>fixed</code>.</li>
+</ul>
+<p>
+  Each is a thin layer over an encoding the interop job does check: <code>long</code>,
+  <code>bytes</code> or <code>fixed</code>.
+</p>
+
+<h2 id="big-decimal">The <code>big-decimal</code> layout</h2>
+<p>
+  A <code>big-decimal</code> carries its scale in each value. The package lays out the
+  <code>bytes</code> of a value as the unscaled value first, as Avro <code>bytes</code> in
+  big-endian two's complement, then the scale as an Avro <code>int</code>. This layout is believed
+  to match the Java implementation, but it has not been checked against Java, and neither Python
+  avro nor fastavro supports <code>big-decimal</code>.
+</p>
+
+<h2>Fuzzing</h2>
+<p>
+  The two entry points that take untrusted bytes, <code>AvroCodec.decode</code> (with
+  single-object encoding) and <code>AvroFileReader</code> with its records, are fuzzed by mutating
+  valid inputs at random. A run fails on any input that throws anything but an
+  <code>AvroException</code>, or takes longer than two seconds. <code>dart test</code> runs 2,000
+  mutations with a fixed seed; a weekly CI job fuzzes for ten minutes.
+</p>

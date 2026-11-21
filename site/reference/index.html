@@ -1,14 +1,43 @@
 <!-- page: title="Reference" track="reference" order=0 summary="The Reference track: the value mapping, the AvroLimits defaults, the exception types, the conformance with the Avro specification, and the API reference on pub.dev." -->
 <p class="lede">
-  Lookups, not reading. The pages follow with the next update of the documentation:
+  Lookups, not reading: tables of what the package does, with little prose. The
+  <a href="../guide/index.html">Guide</a> explains the same facts with examples.
 </p>
-<ul>
-  <li>The mapping of Avro types and logical types to Dart values</li>
-  <li>The <code>AvroLimits</code> defaults</li>
-  <li>The exception types</li>
-  <li>Conformance with the Avro specification, with the interoperability results</li>
+
+<ul class="cards">
+  <li>
+    <a class="card" href="values.html">
+      <p class="eyebrow">Tables</p>
+      <p class="card-title">Value mapping</p>
+      <p>Every Avro type and logical type and its Dart value, with the behaviour at the edges.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="limits.html">
+      <p class="eyebrow">Tables</p>
+      <p class="card-title">Limits</p>
+      <p>Every field of <code>AvroLimits</code>: its default, what it bounds, and what is thrown.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="exceptions.html">
+      <p class="eyebrow">Tables</p>
+      <p class="card-title">Exceptions</p>
+      <p>Each subtype of <code>AvroException</code>: what throws it, when, and what it carries.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="conformance.html">
+      <p class="eyebrow">Tables</p>
+      <p class="card-title">Spec conformance</p>
+      <p>What of Avro 1.12 is in 0.1.0, and the test oracles and interoperability results.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="https://pub.dev/documentation/avro/latest/">
+      <p class="eyebrow">pub.dev</p>
+      <p class="card-title">API reference</p>
+      <p>Every class and member of <code>package:avro/avro.dart</code>, generated from the source.</p>
+    </a>
+  </li>
 </ul>
-<p>
-  Until then, <a href="../start/concepts.html">Concepts</a> has the value mapping and the limits,
-  and the <a href="https://pub.dev/documentation/avro/latest/">API reference</a> on pub.dev documents every class and member.
-</p>

@@ -14,20 +14,25 @@
   Avro specification: fields are matched by name, a field the reader adds takes its default, a
   field the reader drops is skipped, and an <code>int</code> can be read as a <code>long</code>.
 </p>
-<pre><code>final v1 = Schema.parse('''
-{"type": "record", "name": "User", "namespace": "com.example",
- "fields": [{"name": "name", "type": "string"}, {"name": "age", "type": "int"}]}
-''');
-final v2 = Schema.parse('''
-{"type": "record", "name": "User", "namespace": "com.example",
- "fields": [{"name": "name", "type": "string"}, {"name": "age", "type": "long"},
-            {"name": "email", "type": ["null", "string"], "default": null}]}
-''');
+<pre data-example="start/resolution"><code class="language-dart">import 'package:avro/avro.dart';
 
-final old = AvroCodec(writer: v1).encode({'name': 'Ada', 'age': 36});
+void main() {
+  final v1 = Schema.parse('''
+  {"type": "record", "name": "User", "namespace": "com.example",
+   "fields": [{"name": "name", "type": "string"}, {"name": "age", "type": "int"}]}
+  ''');
+  final v2 = Schema.parse('''
+  {"type": "record", "name": "User", "namespace": "com.example",
+   "fields": [{"name": "name", "type": "string"}, {"name": "age", "type": "long"},
+              {"name": "email", "type": ["null", "string"], "default": null}]}
+  ''');
 
-final upgrade = AvroCodec(writer: v1, reader: v2);
-print(upgrade.decode(old)); // {name: Ada, age: 36, email: null}</code></pre>
+  final old = AvroCodec(writer: v1).encode({'name': 'Ada', 'age': 36});
+
+  final upgrade = AvroCodec(writer: v1, reader: v2);
+  print(upgrade.decode(old));
+}</code></pre>
+<pre data-example-output="start/resolution"><code>{name: Ada, age: 36, email: null}</code></pre>
 <p>
   Defaults serve resolution only. When you encode, every field of the record must be in the map,
   even one with a default.
@@ -94,13 +99,22 @@ print(upgrade.decode(old)); // {name: Ada, age: 36, email: null}</code></pre>
   is the full name of a named type, such as <code>com.example.User</code>, or the type name of any
   other, such as <code>long</code> or <code>map</code>.
 </p>
-<pre><code>final number = AvroCodec(writer: Schema.parse('["int", "long"]'));
+<pre data-example="start/branch"><code class="language-dart">import 'package:avro/avro.dart';
 
-number.encode(1);
-// EncodeException at $: more than one branch fits; wrap the value in a Branch of one of int, long
+void main() {
+  final number = AvroCodec(writer: Schema.parse('["int", "long"]'));
 
-final bytes = number.encode(const Branch('long', 1));
-print(number.decode(bytes)); // 1</code></pre>
+  try {
+    number.encode(1);
+  } on EncodeException catch (e) {
+    print(e);
+  }
+
+  final bytes = number.encode(const Branch('long', 1));
+  print(number.decode(bytes));
+}</code></pre>
+<pre data-example-output="start/branch"><code>EncodeException at $: more than one branch fits; wrap the value in a Branch of one of int, long
+1</code></pre>
 <p>
   <code>decode</code> returns the plain value, never a <code>Branch</code>. A union of two records
   with the same fields therefore cannot be told apart after decoding.
@@ -127,20 +141,26 @@ print(number.decode(bytes)); // 1</code></pre>
     <tr><td><code>duration</code></td><td><code>AvroDuration</code>: months, days, milliseconds</td></tr>
   </tbody>
 </table>
-<pre><code>final event = AvroCodec(writer: Schema.parse('''
-{"type": "record", "name": "Event", "fields": [
-  {"name": "at", "type": {"type": "long", "logicalType": "timestamp-millis"}},
-  {"name": "day", "type": {"type": "int", "logicalType": "date"}},
-  {"name": "price",
-   "type": {"type": "bytes", "logicalType": "decimal", "precision": 9, "scale": 2}}
-]}
-'''));
+<pre data-example="start/logical"><code class="language-dart">import 'package:avro/avro.dart';
 
-final bytes = event.encode({
-  'at': DateTime.utc(2026, 11, 21, 9, 30),
-  'day': const AvroDate(2026, 11, 21),
-  'price': AvroDecimal(BigInt.from(1999), 2), // 19.99
-});</code></pre>
+void main() {
+  final event = AvroCodec(writer: Schema.parse('''
+  {"type": "record", "name": "Event", "fields": [
+    {"name": "at", "type": {"type": "long", "logicalType": "timestamp-millis"}},
+    {"name": "day", "type": {"type": "int", "logicalType": "date"}},
+    {"name": "price",
+     "type": {"type": "bytes", "logicalType": "decimal", "precision": 9, "scale": 2}}
+  ]}
+  '''));
+
+  final bytes = event.encode({
+    'at': DateTime.utc(2026, 11, 21, 9, 30),
+    'day': const AvroDate(2026, 11, 21),
+    'price': AvroDecimal(BigInt.from(1999), 2), // 19.99
+  });
+  print(event.decode(bytes));
+}</code></pre>
+<pre data-example-output="start/logical"><code>{at: 2026-11-21 09:30:00.000Z, day: 2026-11-21, price: 19.99}</code></pre>
 <p>
   A logical type the package does not know, or one that does not fit its underlying type, is read
   as the underlying type, as the specification says.
@@ -178,14 +198,33 @@ final bytes = event.encode({
     codec you choose, for example one that resolves the file's schema against yours.
   </li>
 </ul>
-<pre><code>final reader = AvroFileReader(bytes);
-final codec = AvroCodec(
-  writer: Schema.parse(reader.header.schemaJson),
-  reader: mySchema,
-);
-for (final record in reader.records(codec)) {
-  // each record in the shape of mySchema
+<pre data-example="start/file-codec"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final v1 = Schema.parse('''
+  {"type": "record", "name": "User",
+   "fields": [{"name": "name", "type": "string"}, {"name": "age", "type": "int"}]}
+  ''');
+  final writer = AvroFileWriter(AvroCodec(writer: v1));
+  writer.add({'name': 'Ada', 'age': 36});
+  final bytes = writer.close();
+
+  final mySchema = Schema.parse('''
+  {"type": "record", "name": "User",
+   "fields": [{"name": "name", "type": "string"},
+              {"name": "email", "type": ["null", "string"], "default": null}]}
+  ''');
+
+  final reader = AvroFileReader(bytes);
+  final codec = AvroCodec(
+    writer: Schema.parse(reader.header.schemaJson),
+    reader: mySchema,
+  );
+  for (final record in reader.records(codec)) {
+    print(record); // each record in the shape of mySchema
+  }
 }</code></pre>
+<pre data-example-output="start/file-codec"><code>{name: Ada, email: null}</code></pre>
 <p>
   The compressions are <code>null</code> and <code>deflate</code>. A file compressed in any other
   way throws <code>UnsupportedCompressionException</code> when the reader is made. The whole file
@@ -198,15 +237,25 @@ for (final record in reader.records(codec)) {
   in front of one value: the marker <code>C3 01</code> and the CRC-64-AVRO fingerprint of the
   writer schema. A receiver can then tell which schema a message was written with.
 </p>
-<pre><code>final message = codec.encodeSingleObject({'name': 'Ada', 'age': 36, 'email': null});
+<pre data-example="start/single-object"><code class="language-dart">import 'package:avro/avro.dart';
 
-// The receiver keeps one codec per schema it accepts, keyed by fingerprint.
-final codecs = {codec.writer.crc64: codec};
+void main() {
+  final codec = AvroCodec(writer: Schema.parse('''
+  {"type": "record", "name": "User", "namespace": "com.example",
+   "fields": [{"name": "name", "type": "string"}, {"name": "age", "type": "int"},
+              {"name": "email", "type": ["null", "string"], "default": null}]}
+  '''));
+  final message = codec.encodeSingleObject({'name': 'Ada', 'age': 36, 'email': null});
 
-final header = SingleObjectHeader.parse(message);
-final chosen = codecs[header.fingerprint];
-if (chosen == null) throw StateError('unknown schema');
-print(chosen.decodeSingleObject(message)); // {name: Ada, age: 36, email: null}</code></pre>
+  // The receiver keeps one codec per schema it accepts, keyed by fingerprint.
+  final codecs = {codec.writer.crc64: codec};
+
+  final header = SingleObjectHeader.parse(message);
+  final chosen = codecs[header.fingerprint];
+  if (chosen == null) throw StateError('unknown schema');
+  print(chosen.decodeSingleObject(message));
+}</code></pre>
+<pre data-example-output="start/single-object"><code>{name: Ada, age: 36, email: null}</code></pre>
 <p>
   <code>decodeSingleObject</code> throws <code>DecodeException</code> if the header is missing or
   names another schema than the codec's writer schema. Which fingerprints to accept is your
@@ -220,13 +269,27 @@ print(chosen.decodeSingleObject(message)); // {name: Ada, age: 36, email: null}<
   Schemas that differ only in those have the same canonical form. A
   <a href="glossary.html#fingerprint">fingerprint</a> is a hash of it.
 </p>
-<pre><code>print(schema.canonicalForm);
-// {"name":"com.example.User","type":"record","fields":[{"name":"name","type":"string"},...]}
+<pre data-example="start/fingerprints"><code class="language-dart">import 'dart:typed_data';
 
-final int crc = schema.crc64;            // CRC-64-AVRO, the 64-bit pattern in an int
-final Uint8List wire = crc64ToBytes(crc); // the 8 little-endian bytes Avro writes
-final Uint8List md5 = schema.md5;         // 16 bytes
-final Uint8List sha256 = schema.sha256;   // 32 bytes</code></pre>
+import 'package:avro/avro.dart';
+
+void main() {
+  final schema = Schema.parse('''
+  {"type": "record", "name": "User", "namespace": "com.example",
+   "doc": "A user.",
+   "fields": [{"name": "name", "type": "string", "default": ""},
+              {"name": "age", "type": "int"}]}
+  ''');
+  print(schema.canonicalForm);
+
+  final int crc = schema.crc64;            // CRC-64-AVRO, the 64-bit pattern in an int
+  final Uint8List wire = crc64ToBytes(crc); // the 8 little-endian bytes Avro writes
+  final Uint8List md5 = schema.md5;         // 16 bytes
+  final Uint8List sha256 = schema.sha256;   // 32 bytes
+  print('$crc ${wire.length} ${md5.length} ${sha256.length}');
+}</code></pre>
+<pre data-example-output="start/fingerprints"><code>{"name":"com.example.User","type":"record","fields":[{"name":"name","type":"string"},{"name":"age","type":"int"}]}
+2748590386847567157 8 16 32</code></pre>
 <p>
   The CRC-64-AVRO fingerprint is an <code>int</code>, so it can be a map key as it is. It holds the
   64-bit pattern, as Java's <code>long</code> does, so it is often negative.
@@ -248,7 +311,7 @@ final Uint8List sha256 = schema.sha256;   // 32 bytes</code></pre>
     <tr><td><code>maxSchemaBytes</code></td><td>1 MiB</td><td>The JSON text of one schema, in UTF-8 bytes</td></tr>
     <tr><td><code>maxSchemaDepth</code></td><td>64</td><td>The nesting depth of a schema's JSON text</td></tr>
     <tr><td><code>maxValueDepth</code></td><td>1024</td><td>The nesting depth of one value</td></tr>
-    <tr><td><code>maxZeroSizeItems</code></td><td>1,048,576</td><td>The items of one array or map whose items take zero bytes, such as an array of <code>null</code></td></tr>
+    <tr><td><code>maxZeroSizeItems</code></td><td>1,048,576</td><td>The items of one array whose items take zero bytes, such as an array of <code>null</code></td></tr>
   </tbody>
 </table>
 <p>
@@ -257,30 +320,47 @@ final Uint8List sha256 = schema.sha256;   // 32 bytes</code></pre>
   <code>AvroLimits.none</code> turns them all off. Input over a limit throws
   <code>LimitExceededException</code>, whose <code>limit</code> names the field.
 </p>
-<pre><code>const strict = AvroLimits(
-  maxBlockBytes: 16 * 1024 * 1024,
-  maxTotalBytes: 256 * 1024 * 1024,
-);
-final reader = AvroFileReader(bytes, limits: strict);</code></pre>
+<pre data-example="start/limits"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final writer = AvroFileWriter(AvroCodec(writer: Schema.parse('"string"')));
+  writer.add('a record');
+  final bytes = writer.close();
+
+  const strict = AvroLimits(
+    maxBlockBytes: 16 * 1024 * 1024,
+    maxTotalBytes: 256 * 1024 * 1024,
+  );
+  final reader = AvroFileReader(bytes, limits: strict);
+  print(reader.records().toList());
+}</code></pre>
+<pre data-example-output="start/limits"><code>[a record]</code></pre>
 <p>
   Some checks are always on, whatever the limits: a declared length or count is checked against
   the remaining input before anything is allocated, negative lengths are rejected, and strings
   must be well-formed UTF-8.
 </p>
 <p>
-  Every failure of the package is an <code>AvroException</code>. The class is sealed, so a
-  <code>switch</code> over it covers each cause:
+  Every failure caused by a schema, a value or bytes is an <code>AvroException</code>. The class
+  is sealed, so a <code>switch</code> over it covers each cause. A wrong argument, such as a
+  reserved metadata key, is an <code>ArgumentError</code>;
+  <a href="../guide/errors.html">Errors</a> has the details.
 </p>
-<pre><code>try {
-  // parse, encode, decode or read
-} on AvroException catch (e) {
-  final reason = switch (e) {
-    SchemaParseException() =&gt; 'not a valid schema',
-    ResolutionException() =&gt; 'the schemas do not resolve',
-    DecodeException() =&gt; 'not a valid encoding',
-    EncodeException() =&gt; 'the value does not fit the schema',
-    LimitExceededException(:final limit) =&gt; 'over the limit $limit',
-    UnsupportedCompressionException(:final compression) =&gt; 'cannot read $compression',
-  };
-  print(reason);
+<pre data-example="start/errors"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  try {
+    Schema.parse('{"type": "nope"}'); // parse, encode, decode or read
+  } on AvroException catch (e) {
+    final reason = switch (e) {
+      SchemaParseException() =&gt; 'not a valid schema',
+      ResolutionException() =&gt; 'the schemas do not resolve',
+      DecodeException() =&gt; 'not a valid encoding',
+      EncodeException() =&gt; 'the value does not fit the schema',
+      LimitExceededException(:final limit) =&gt; 'over the limit $limit',
+      UnsupportedCompressionException(:final compression) =&gt; 'cannot read $compression',
+    };
+    print(reason);
+  }
 }</code></pre>
+<pre data-example-output="start/errors"><code>not a valid schema</code></pre>

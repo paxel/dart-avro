@@ -1,19 +1,69 @@
 <!-- page: title="Guide" track="guide" order=0 summary="The Guide track: one task per page, from schemas and unions to container files, limits and errors." -->
 <p class="lede">
-  One task per page, each with its code. The pages follow with the next update of the
-  documentation:
+  One task per page, each with programs you can run as they are. Read them in any order; each
+  page links to the others where they meet.
 </p>
-<ul>
-  <li>Schemas and attributes</li>
-  <li>Values and unions</li>
-  <li>Schema resolution</li>
-  <li>Single-object encoding</li>
-  <li>Container files</li>
-  <li>Fingerprints and canonical form</li>
-  <li>Untrusted input and limits</li>
-  <li>Errors</li>
+
+<ul class="cards">
+  <li>
+    <a class="card" href="schemas.html">
+      <p class="eyebrow">Chapter 1</p>
+      <p class="card-title">Schemas and attributes</p>
+      <p>Parse a schema, walk its sealed tree, and read names, doc, aliases, props and defaults.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="values.html">
+      <p class="eyebrow">Chapter 2</p>
+      <p class="card-title">Values and unions</p>
+      <p>The plain Dart values, strict records, how a union branch is inferred, and <code>Branch</code>.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="resolution.html">
+      <p class="eyebrow">Chapter 3</p>
+      <p class="card-title">Schema resolution</p>
+      <p>Read old data as a new schema: promotions, aliases, defaults, enums and unions.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="single-object.html">
+      <p class="eyebrow">Chapter 4</p>
+      <p class="card-title">Single-object encoding</p>
+      <p>One value with the fingerprint of its schema, and choosing the codec by fingerprint.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="container-files.html">
+      <p class="eyebrow">Chapter 5</p>
+      <p class="card-title">Container files</p>
+      <p>Write files with metadata and compression; read the header first, then the records.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="fingerprints.html">
+      <p class="eyebrow">Chapter 6</p>
+      <p class="card-title">Fingerprints and canonical form</p>
+      <p>The Parsing Canonical Form, CRC-64-AVRO as an <code>int</code>, MD5 and SHA-256.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="limits.html">
+      <p class="eyebrow">Chapter 7</p>
+      <p class="card-title">Untrusted input and limits</p>
+      <p><code>AvroLimits</code>, the checks that are always on, deflate bombs and deep values.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="errors.html">
+      <p class="eyebrow">Chapter 8</p>
+      <p class="card-title">Errors</p>
+      <p>The sealed <code>AvroException</code>, an exhaustive switch, and what each type carries.</p>
+    </a>
+  </li>
 </ul>
+
 <p>
-  Until then, <a href="../start/concepts.html">Concepts</a> covers each of these topics in short,
-  and the <a href="https://pub.dev/documentation/avro/latest/">API reference</a> on pub.dev documents every class and member.
+  The <a href="../reference/index.html">Reference</a> has the same facts as tables, to look them
+  up.
 </p>

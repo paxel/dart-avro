@@ -1,0 +1,149 @@
+<!-- page: title="Value mapping" track="reference" order=1 summary="Every Avro type and logical type and the Dart value encode accepts and decode returns, with the exact behaviour at the edges: uuid case, lost precision, out-of-range timestamps." -->
+<p class="lede">
+  The Dart value of every Avro type and logical type, for <code>encode</code> and for
+  <code>decode</code>. A value that does not fit throws <code>EncodeException</code>; bytes that do
+  not decode throw <code>DecodeException</code>. The <a href="../guide/values.html">Values and
+  unions</a> guide shows them at work.
+</p>
+
+<h2>Primitive types</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Avro type</th>           <th><code>encode</code> accepts</th>                <th><code>decode</code> returns</th><th>Encoding</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>null</code></td>   <td><code>null</code></td>                          <td><code>null</code></td>          <td>no bytes</td></tr>
+    <tr><td><code>boolean</code></td><td><code>bool</code></td>                          <td><code>bool</code></td>          <td>one byte, 0 or 1; any other byte is rejected</td></tr>
+    <tr><td><code>int</code></td>    <td><code>int</code> from -2<sup>31</sup> to 2<sup>31</sup>-1</td><td><code>int</code></td><td>zig-zag varint; a value beyond 32 bits is rejected</td></tr>
+    <tr><td><code>long</code></td>   <td><code>int</code></td>                           <td><code>int</code></td>           <td>zig-zag varint of at most 10 bytes</td></tr>
+    <tr><td><code>float</code></td>  <td><code>num</code></td>                           <td><code>double</code></td>        <td>4 bytes, IEEE 754, little-endian</td></tr>
+    <tr><td><code>double</code></td> <td><code>num</code></td>                           <td><code>double</code></td>        <td>8 bytes, IEEE 754, little-endian</td></tr>
+    <tr><td><code>bytes</code></td>  <td><code>Uint8List</code></td>                     <td><code>Uint8List</code></td>     <td>length, then the bytes</td></tr>
+    <tr><td><code>string</code></td> <td><code>String</code> without unpaired surrogates</td><td><code>String</code></td>   <td>length, then well-formed UTF-8</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Complex types</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Avro type</th>          <th><code>encode</code> accepts</th>                                        <th><code>decode</code> returns</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>record</code></td><td><code>Map&lt;String, Object?&gt;</code> with exactly the record's fields</td><td><code>Map&lt;String, Object?&gt;</code>, the fields in schema order</td></tr>
+    <tr><td><code>enum</code></td>  <td><code>String</code>, one of the symbols</td>                            <td><code>String</code></td></tr>
+    <tr><td><code>array</code></td> <td><code>List&lt;Object?&gt;</code>, but not a <code>Uint8List</code></td>  <td><code>List&lt;Object?&gt;</code></td></tr>
+    <tr><td><code>map</code></td>   <td><code>Map&lt;String, Object?&gt;</code></td>                            <td><code>Map&lt;String, Object?&gt;</code></td></tr>
+    <tr><td><code>fixed</code></td> <td><code>Uint8List</code> of exactly the size</td>                         <td><code>Uint8List</code></td></tr>
+    <tr><td>union</td>              <td>the value of one branch, or <code>Branch(name, value)</code></td>       <td>the value of the branch, never a <code>Branch</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  The rules for choosing a union branch are in
+  <a href="../guide/values.html#how-a-union-branch-is-chosen">Values and unions</a>. Every list and
+  map that <code>decode</code> returns is new and growable.
+</p>
+
+<h2>Logical types</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Logical type</th>                              <th>On</th>                                       <th>Dart value</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>uuid</code></td>                         <td><code>string</code>, <code>fixed</code> of 16</td><td><code>String</code> of 36 characters, lower case</td></tr>
+    <tr><td><code>date</code></td>                         <td><code>int</code></td>                         <td><code>AvroDate</code></td></tr>
+    <tr><td><code>time-millis</code></td>                  <td><code>int</code></td>                         <td><code>Duration</code> since midnight</td></tr>
+    <tr><td><code>time-micros</code></td>                  <td><code>long</code></td>                        <td><code>Duration</code> since midnight</td></tr>
+    <tr><td><code>timestamp-millis</code></td>             <td><code>long</code></td>                        <td><code>DateTime</code> in UTC</td></tr>
+    <tr><td><code>timestamp-micros</code></td>             <td><code>long</code></td>                        <td><code>DateTime</code> in UTC</td></tr>
+    <tr><td><code>timestamp-nanos</code></td>              <td><code>long</code></td>                        <td><code>AvroTimestampNanos</code></td></tr>
+    <tr><td><code>local-timestamp-millis</code></td>       <td><code>long</code></td>                        <td><code>AvroLocalTimestamp</code></td></tr>
+    <tr><td><code>local-timestamp-micros</code></td>       <td><code>long</code></td>                        <td><code>AvroLocalTimestamp</code></td></tr>
+    <tr><td><code>local-timestamp-nanos</code></td>        <td><code>long</code></td>                        <td><code>AvroLocalTimestamp</code></td></tr>
+    <tr><td><code>decimal</code></td>                      <td><code>bytes</code>, <code>fixed</code></td>   <td><code>AvroDecimal</code></td></tr>
+    <tr><td><code>big-decimal</code></td>                  <td><code>bytes</code></td>                       <td><code>AvroDecimal</code></td></tr>
+    <tr><td><code>duration</code></td>                     <td><code>fixed</code> of 12</td>                 <td><code>AvroDuration</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  A logical type the package does not know, or one on another underlying type than the table
+  says, is ignored, and the value is that of the underlying type. So is a <code>decimal</code>
+  with invalid parameters: no <code>precision</code>, a precision below 1, a scale below 0 or above
+  the precision, or a precision that the <code>fixed</code> cannot hold.
+</p>
+
+<h2>The edges of each logical type</h2>
+
+<h3><code>uuid</code></h3>
+<ul>
+  <li><code>encode</code> accepts a <code>String</code> in the form <code>8-4-4-4-12</code> of hexadecimal digits, in either case, and writes it in lower case on a <code>string</code>, or as its 16 bytes on a <code>fixed</code>.</li>
+  <li><code>decode</code> returns lower case. On a <code>string</code>, a text that is not in that form throws <code>DecodeException</code>.</li>
+</ul>
+
+<h3><code>date</code></h3>
+<ul>
+  <li><code>AvroDate(year, month, day)</code> is a calendar date with no time zone, in the proleptic Gregorian calendar; <code>epochDays</code> and <code>AvroDate.fromEpochDays</code> convert to and from days since 1970-01-01. It prints as <code>2026-11-21</code>.</li>
+  <li>A date beyond the days an <code>int</code> holds throws <code>EncodeException</code>.</li>
+</ul>
+
+<h3><code>time-millis</code>, <code>time-micros</code></h3>
+<ul>
+  <li>A <code>Duration</code> since midnight. The package does not check that it is shorter than a day.</li>
+  <li><code>time-millis</code> throws <code>EncodeException</code> for a <code>Duration</code> with microseconds, rather than lose them, and for one beyond the 32 bits of an <code>int</code>.</li>
+</ul>
+
+<h3><code>timestamp-millis</code>, <code>timestamp-micros</code></h3>
+<ul>
+  <li><code>encode</code> accepts any <code>DateTime</code>, in UTC or local time, and writes its instant. <code>timestamp-millis</code> throws <code>EncodeException</code> for a <code>DateTime</code> with microseconds, rather than lose them.</li>
+  <li><code>decode</code> returns a <code>DateTime</code> in UTC.</li>
+  <li>A <code>DateTime</code> covers 100,000,000 days either side of 1970. A <code>long</code> beyond that, which is a valid encoding, throws <code>DecodeException</code> naming the field and the value, so that a field always has one Dart type.</li>
+</ul>
+
+<h3><code>timestamp-nanos</code></h3>
+<ul>
+  <li><code>AvroTimestampNanos(epochNanoseconds)</code>, nanoseconds since 1970-01-01T00:00:00Z. Every <code>long</code> is a valid value.</li>
+  <li><code>toDateTime()</code> returns the instant in UTC, truncated to the microsecond; <code>AvroTimestampNanos.fromDateTime</code> goes the other way.</li>
+</ul>
+
+<h3><code>local-timestamp-millis</code>, <code>-micros</code>, <code>-nanos</code></h3>
+<ul>
+  <li><code>AvroLocalTimestamp(year, month, day, [hour, minute, second, nanosecond])</code> holds wall-clock fields with no time zone; it prints as <code>2026-11-21T09:30:00.000000000</code>.</li>
+  <li><code>encode</code> throws <code>EncodeException</code> where a finer fraction would be lost: a <code>nanosecond</code> that is not whole milliseconds for <code>-millis</code>, not whole microseconds for <code>-micros</code>.</li>
+  <li><code>epochMilliseconds</code>, <code>epochMicroseconds</code> (<code>null</code> where a fraction would be lost) and <code>epochNanoseconds</code> give the time as if it were UTC; the factories <code>fromEpochMilliseconds</code>, <code>fromEpochMicroseconds</code> and <code>fromEpochNanoseconds</code> build one.</li>
+  <li><code>toDateTime()</code> returns the wall-clock time in the device's local time zone, to the microsecond.</li>
+  <li>Two values are equal when they name the same wall-clock time, whatever fields they were built from.</li>
+</ul>
+
+<h3><code>decimal</code></h3>
+<ul>
+  <li><code>AvroDecimal(unscaled, scale)</code> is <code>unscaled</code> × 10<sup>-scale</sup>, with <code>unscaled</code> a <code>BigInt</code>. It prints as decimal text, such as <code>19.99</code>.</li>
+  <li><code>encode</code> throws <code>EncodeException</code> unless the scale is the schema's <code>scale</code> (0 when absent), and the unscaled value has at most <code>precision</code> digits and fits the <code>fixed</code>. Rescale the value yourself; the package does not round.</li>
+  <li>The bytes are the unscaled value in big-endian two's complement: as few as it needs on <code>bytes</code>, sign-extended to the size on <code>fixed</code>.</li>
+  <li>Equality compares <code>unscaled</code> and <code>scale</code>, so <code>1.0</code> and <code>1.00</code> are not equal.</li>
+</ul>
+
+<h3><code>big-decimal</code></h3>
+<ul>
+  <li>The same <code>AvroDecimal</code>, with any scale, carried in the value.</li>
+  <li>The <code>bytes</code> value holds the unscaled value as Avro <code>bytes</code> (its length, then big-endian two's complement), followed by the scale as an Avro <code>int</code>. See <a href="conformance.html#big-decimal">Spec conformance</a> for how this layout was chosen.</li>
+</ul>
+
+<h3><code>duration</code></h3>
+<ul>
+  <li><code>AvroDuration(months, days, milliseconds)</code>, written as three unsigned 32-bit little-endian numbers in a <code>fixed</code> of 12.</li>
+  <li>A part below 0 or above 4,294,967,295 throws <code>EncodeException</code>.</li>
+</ul>
+
+<h2>Defaults</h2>
+<p>
+  A field default is written in the schema as JSON and becomes the same Dart value as
+  <code>decode</code> would return: a <code>bytes</code> or <code>fixed</code> default, a string of
+  the characters U+0000 to U+00FF, becomes a <code>Uint8List</code>, and a default of a logical
+  type becomes its Dart value. See <a href="../guide/schemas.html#defaults-as-dart-values">Schemas
+  and attributes</a>.
+</p>

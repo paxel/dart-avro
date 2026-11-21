@@ -1,0 +1,91 @@
+<!-- page: title="Exceptions" track="reference" order=3 summary="Each subtype of the sealed AvroException: what throws it, when, the fields it carries and how it prints; and the Dart errors the package throws for wrong arguments." -->
+<p class="lede">
+  The six subtypes of <code>AvroException</code>, what throws each, and what each carries. The
+  <a href="../guide/errors.html">Errors</a> guide shows how to handle them.
+</p>
+
+<h2>The base class</h2>
+<p>
+  <code>sealed class AvroException implements Exception</code>, with one field,
+  <code>message</code>: what went wrong, in words. The subtypes are <code>final</code>, so the six
+  below are all there are, and a <code>switch</code> over an <code>AvroException</code> that names
+  them all is exhaustive.
+</p>
+
+<h2>Summary</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Exception</th>                                    <th>Fields</th>                                              <th><code>toString()</code></th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>SchemaParseException</code></td>            <td><code>String? path</code></td>                           <td><code>SchemaParseException at Memo.fields[1].type: …</code>, or without <code>at</code> when <code>path</code> is <code>null</code></td></tr>
+    <tr><td><code>ResolutionException</code></td>             <td><code>String path</code></td>                            <td><code>ResolutionException at Memo.written: …</code></td></tr>
+    <tr><td><code>DecodeException</code></td>                 <td><code>int offset</code>, <code>String? path</code></td>  <td><code>DecodeException at byte 12 ($.at): …</code>, or without the path</td></tr>
+    <tr><td><code>EncodeException</code></td>                 <td><code>String path</code></td>                            <td><code>EncodeException at $.written.year: …</code></td></tr>
+    <tr><td><code>LimitExceededException</code></td>          <td><code>String limit</code></td>                           <td><code>LimitExceededException: …</code></td></tr>
+    <tr><td><code>UnsupportedCompressionException</code></td> <td><code>String compression</code></td>                     <td><code>UnsupportedCompressionException: …</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2><code>SchemaParseException</code></h2>
+<p>The JSON text is not JSON, or not a valid Avro schema.</p>
+<ul>
+  <li>Thrown by <code>Schema.parse</code>, and so by <code>AvroFileWriter</code> for a <code>schemaJson</code> that is not a schema, and by <code>AvroFileReader.records()</code>, when the iteration starts, for a file whose <code>avro.schema</code> is not a schema.</li>
+  <li><code>path</code>: where in the schema, such as <code>Memo.fields[1].type</code>, <code>$</code> or <code>$[2]</code> from the root; <code>null</code> when the text is not JSON.</li>
+</ul>
+
+<h2><code>ResolutionException</code></h2>
+<p>A writer schema does not resolve against a reader schema.</p>
+<ul>
+  <li>Thrown by <code>AvroCodec(writer:, reader:)</code>, before any data is read, for every problem that does not depend on the data.</li>
+  <li>Thrown by <code>decode</code>, <code>decodeSingleObject</code> and <code>AvroFileReader.records(codec)</code> for a datum that holds an enum symbol the reader lacks and has no default for, or a branch of a writer union that does not resolve.</li>
+  <li><code>path</code>: from the constructor, a place in the schemas, such as <code>Memo.written</code> or <code>Memo.tags[]</code>; from decoding, the place in the value, such as <code>$.colour</code>.</li>
+</ul>
+
+<h2><code>DecodeException</code></h2>
+<p>The bytes are not a valid encoding.</p>
+<ul>
+  <li>Thrown by <code>decode</code> and <code>decodeSingleObject</code>: truncated or malformed data, a value beyond its type, bytes left over after the datum, a logical value that cannot be read.</li>
+  <li>Thrown by <code>SingleObjectHeader.parse</code> and <code>decodeSingleObject</code>: fewer than 10 bytes, no marker <code>C3 01</code>, and, for <code>decodeSingleObject</code>, a fingerprint that is not the writer schema's.</li>
+  <li>Thrown by the <code>AvroFileReader</code> constructor: no magic, a malformed header, no <code>avro.schema</code>, or <code>avro.schema</code> or <code>avro.codec</code> that is not UTF-8.</li>
+  <li>Thrown while iterating <code>AvroFileReader.records</code>: a malformed block, a sync marker that does not match, data that is not valid DEFLATE, a record count the block cannot hold, bytes left after the records.</li>
+  <li><code>offset</code>: the byte where decoding failed, from the start of the bytes decoded; for the records of a container file, from the start of the decompressed block.</li>
+  <li><code>path</code>: the place in the value when a logical type cannot be read, such as a <code>timestamp-millis</code> beyond <code>DateTime</code> or a <code>uuid</code> string that is not a UUID; otherwise <code>null</code>.</li>
+</ul>
+
+<h2><code>EncodeException</code></h2>
+<p>A value does not fit the schema it is encoded with.</p>
+<ul>
+  <li>Thrown by <code>encode</code>, <code>encodeSingleObject</code> and <code>AvroFileWriter.add</code>: a value of the wrong Dart type, a missing record field or an unknown key, an <code>int</code> beyond 32 bits, a wrong <code>fixed</code> size, an unknown enum symbol, an unpaired surrogate, a union value that fits no branch or more than one, a logical value that would lose precision or does not fit, a value nested deeper than <code>maxValueDepth</code>.</li>
+  <li><code>path</code>: the place in the value: <code>$</code>, <code>$.written.year</code>, <code>$.items[2]</code>.</li>
+</ul>
+
+<h2><code>LimitExceededException</code></h2>
+<p>Input exceeds one of the <a href="limits.html">limits</a>.</p>
+<ul>
+  <li>Thrown by <code>Schema.parse</code> for <code>maxSchemaBytes</code> and <code>maxSchemaDepth</code>, by <code>decode</code> and <code>decodeSingleObject</code> for <code>maxValueDepth</code> and <code>maxZeroSizeItems</code>, and while iterating <code>AvroFileReader.records</code> for <code>maxBlockBytes</code> and <code>maxTotalBytes</code>.</li>
+  <li><code>limit</code>: the name of the <code>AvroLimits</code> field, such as <code>maxBlockBytes</code>.</li>
+</ul>
+
+<h2><code>UnsupportedCompressionException</code></h2>
+<p>A container file uses a compression this package does not support.</p>
+<ul>
+  <li>Thrown by the <code>AvroFileReader</code> constructor for a file whose <code>avro.codec</code> is not <code>null</code> or <code>deflate</code>, and by the <code>AvroFileWriter</code> constructor for such a <code>compression</code>.</li>
+  <li><code>compression</code>: the value of <code>avro.codec</code>, or the argument.</li>
+</ul>
+
+<h2>Not an <code>AvroException</code></h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Error</th>                     <th>Thrown by</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>ArgumentError</code></td><td><code>AvroFileWriter</code>: a <code>metadata</code> key starting with <code>avro.</code>, a <code>syncMarker</code> that is not 16 bytes, a <code>schemaJson</code> whose canonical form is not the codec's writer schema's</td></tr>
+    <tr><td><code>ArgumentError</code></td><td><code>crc64FromBytes</code>: anything but 8 bytes</td></tr>
+    <tr><td><code>StateError</code></td>   <td><code>AvroFileWriter</code>: <code>add</code>, <code>flush</code> or <code>close</code> after <code>close</code></td></tr>
+  </tbody>
+</table>
+</div>

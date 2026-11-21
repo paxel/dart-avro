@@ -1,0 +1,127 @@
+<!-- page: title="Fingerprints and canonical form" track="guide" order=6 summary="The Parsing Canonical Form of a schema and its fingerprints: crc64 as an int, crc64ToBytes and crc64FromBytes, md5, sha256, and what the canonical form leaves out." -->
+<p class="lede">
+  Two schemas can say the same thing in different words: other spacing, other key order, a
+  documentation string more. The canonical form strips a schema down to what decides its
+  encoding, and a fingerprint is a hash of it, short enough to send with every message.
+</p>
+
+<h2>The canonical form</h2>
+<p>
+  <code>schema.canonicalForm</code> is the Parsing Canonical Form of the Avro specification, as a
+  <code>String</code>. It is computed once per schema and then kept. The form:
+</p>
+<ul>
+  <li>writes every name as a full name and drops <code>namespace</code>;</li>
+  <li>keeps only <code>name</code>, <code>type</code>, <code>fields</code>, <code>symbols</code>, <code>items</code>, <code>values</code> and <code>size</code>, in that order;</li>
+  <li>writes a primitive as its name alone: <code>{"type": "int"}</code> becomes <code>"int"</code>;</li>
+  <li>writes a named type in full where it first appears, and as its full name after that;</li>
+  <li>has no whitespace outside strings.</li>
+</ul>
+<p>
+  So it leaves out <code>doc</code>, <code>aliases</code>, field defaults, <code>order</code>, the
+  enum <code>default</code>, every <a href="../start/glossary.html#props">prop</a>, and logical
+  types with their attributes such as <code>precision</code> and <code>scale</code>. A
+  <code>long</code> and a <code>timestamp-millis</code> on a <code>long</code> have the same
+  canonical form.
+</p>
+<pre data-example="guide/fingerprints-canonical"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final a = Schema.parse('''
+  {"type": "record", "name": "Event", "namespace": "com.example",
+   "doc": "Something that happened.", "aliases": ["Happening"],
+   "fields": [
+     {"name": "at", "type": {"type": "long", "logicalType": "timestamp-millis"},
+      "doc": "When.", "default": 0},
+     {"name": "kind", "type": {"type": "enum", "name": "Kind",
+                               "symbols": ["START", "STOP"], "default": "START"}},
+     {"name": "previous", "type": ["null", "Kind"], "default": null, "order": "ignore"}
+   ]}
+  ''');
+  final b = Schema.parse('''
+  {"fields": [{"type": "long", "name": "at"},
+              {"type": {"symbols": ["START", "STOP"], "type": "enum", "name": "Kind"}, "name": "kind"},
+              {"type": ["null", "com.example.Kind"], "name": "previous"}],
+   "type": "record", "name": "com.example.Event"}
+  ''');
+
+  print(a.canonicalForm);
+  print(a.canonicalForm == b.canonicalForm);
+}</code></pre>
+<pre data-example-output="guide/fingerprints-canonical"><code>{"name":"com.example.Event","type":"record","fields":[{"name":"at","type":"long"},{"name":"kind","type":{"name":"com.example.Kind","type":"enum","symbols":["START","STOP"]}},{"name":"previous","type":["null","com.example.Kind"]}]}
+true</code></pre>
+
+<h2>The fingerprints</h2>
+<p>A <a href="../start/glossary.html#fingerprint">fingerprint</a> is a hash of the UTF-8 bytes of the canonical form:</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Getter</th>           <th>Hash</th>                     <th>Dart type</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>crc64</code></td> <td>CRC-64-AVRO (Rabin)</td>      <td><code>int</code>, the 64-bit pattern</td></tr>
+    <tr><td><code>md5</code></td>   <td>MD5</td>                      <td><code>Uint8List</code> of 16 bytes</td></tr>
+    <tr><td><code>sha256</code></td><td>SHA-256</td>                  <td><code>Uint8List</code> of 32 bytes</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  The getters come from the extension <code>SchemaFingerprints</code>, which
+  <code>package:avro/avro.dart</code> exports with everything else.
+</p>
+
+<h2>CRC-64-AVRO as an int</h2>
+<p>
+  The CRC-64-AVRO fingerprint is the one Avro itself uses, in
+  <a href="single-object.html">single-object encoding</a>. The package gives it as an
+  <code>int</code> that holds the 64 bits as they are, as Java's <code>long</code> does. When the
+  highest bit is set, the <code>int</code> is negative. As an <code>int</code>, it is a map key and
+  compares with <code>==</code> without any wrapping.
+</p>
+<ul>
+  <li><code>crc64ToBytes(fingerprint)</code> gives the 8 little-endian bytes Avro writes.</li>
+  <li><code>crc64FromBytes(bytes)</code> reads them back; anything but 8 bytes throws <code>ArgumentError</code>.</li>
+  <li><code>crc64Avro(bytes)</code> computes the CRC-64-AVRO of any bytes, not only of a canonical form.</li>
+</ul>
+<pre data-example="guide/fingerprints-crc"><code class="language-dart">import 'dart:convert';
+
+import 'package:avro/avro.dart';
+
+void main() {
+  final schema = Schema.parse('"string"');
+
+  final crc = schema.crc64;
+  print(crc);
+  print(BigInt.from(crc).toUnsigned(64).toRadixString(16)); // as an unsigned hex number
+
+  final bytes = crc64ToBytes(crc);
+  print(bytes);
+  print(crc64FromBytes(bytes) == crc);
+  print(crc64Avro(utf8.encode(schema.canonicalForm)) == crc);
+
+  print(schema.md5.length);
+  print(schema.sha256.length);
+}</code></pre>
+<pre data-example-output="guide/fingerprints-crc"><code>-8142146995180207161
+8f014872634503c7
+[199, 3, 69, 99, 114, 72, 1, 143]
+true
+true
+16
+32</code></pre>
+<p>
+  To print a fingerprint as an unsigned number, go through <code>BigInt</code> as above; the
+  <code>int</code> itself prints with its sign.
+</p>
+
+<h2>Which fingerprint to use</h2>
+<p>
+  The specification describes all three. CRC-64-AVRO is short and is what single-object encoding
+  sends, but it is not a cryptographic hash: anyone can make a schema with a given CRC. Use it to
+  find a schema among those you know, never to prove that a schema is one you trust. Where a
+  fingerprint must resist that, compare <code>sha256</code>, or the canonical forms themselves.
+</p>
+<p>
+  The canonical forms and CRC-64-AVRO fingerprints of the package are checked against the
+  Apache Avro test data; see <a href="../reference/conformance.html">Spec conformance</a>.
+</p>

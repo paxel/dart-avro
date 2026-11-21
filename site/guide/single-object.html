@@ -1,0 +1,129 @@
+<!-- page: title="Single-object encoding" track="guide" order=4 summary="Send one value with the fingerprint of its schema: encodeSingleObject, decodeSingleObject, and SingleObjectHeader.parse to choose the codec by fingerprint before decoding." -->
+<p class="lede">
+  Single-object encoding sends one value together with the fingerprint of the schema it was
+  written with, so the receiver can tell which schema to read it with. It suits messages, queue
+  entries and database cells, where a container file would be too much.
+</p>
+
+<h2>The format</h2>
+<p>A single-object message is three parts, back to back:</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Bytes</th>  <th>Content</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>2</td>      <td>The marker <code>C3 01</code></td></tr>
+    <tr><td>8</td>      <td>The CRC-64-AVRO <a href="fingerprints.html">fingerprint</a> of the writer schema, little-endian</td></tr>
+    <tr><td>the rest</td><td>The datum, in the binary encoding</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  The first two parts are the <a href="../start/glossary.html#single-object-header">single-object
+  header</a>. <code>codec.encodeSingleObject(value)</code> writes the whole message with the
+  codec's writer schema, and <code>codec.decodeSingleObject(bytes)</code> reads it back.
+</p>
+<pre data-example="guide/single-object-bytes"><code class="language-dart">import 'package:avro/avro.dart';
+
+String hex(List&lt;int&gt; bytes) =&gt;
+    bytes.map((b) =&gt; b.toRadixString(16).padLeft(2, '0')).join(' ');
+
+void main() {
+  final codec = AvroCodec(writer: Schema.parse('"string"'));
+
+  final message = codec.encodeSingleObject('hi');
+  print(hex(message));
+  print(hex(crc64ToBytes(codec.writer.crc64)));
+  print(codec.decodeSingleObject(message));
+}</code></pre>
+<pre data-example-output="guide/single-object-bytes"><code>c3 01 c7 03 45 63 72 48 01 8f 04 68 69
+c7 03 45 63 72 48 01 8f
+hi</code></pre>
+
+<h2>Choose the codec by fingerprint</h2>
+<p>
+  <code>SingleObjectHeader.parse(bytes)</code> reads the header alone, without decoding the datum.
+  Its <code>fingerprint</code> is the CRC-64-AVRO <code>int</code>, the same value as
+  <code>schema.crc64</code>, so it can key a map of codecs. Its <code>payload</code> is the datum
+  after the header, a view of the bytes you passed.
+</p>
+<p>
+  A receiver keeps one codec per writer schema it accepts. When the writer schemas are older
+  versions of the receiver's own schema, each codec resolves its version to the current one, so
+  every message comes out in one shape. Which fingerprints to accept is your decision: the package
+  keeps no registry.
+</p>
+<pre data-example="guide/single-object-registry"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final v1 = Schema.parse('''
+  {"type": "record", "name": "Ping", "fields": [{"name": "from", "type": "string"}]}
+  ''');
+  final v2 = Schema.parse('''
+  {"type": "record", "name": "Ping", "fields": [
+    {"name": "from", "type": "string"},
+    {"name": "hops", "type": "int", "default": 0}
+  ]}
+  ''');
+
+  // Every writer schema the receiver accepts, read as the current v2.
+  final codecs = {
+    for (final writer in [v1, v2]) writer.crc64: AvroCodec(writer: writer, reader: v2),
+  };
+
+  final messages = [
+    AvroCodec(writer: v1).encodeSingleObject({'from': 'old app'}),
+    AvroCodec(writer: v2).encodeSingleObject({'from': 'new app', 'hops': 2}),
+  ];
+
+  for (final message in messages) {
+    final header = SingleObjectHeader.parse(message);
+    final codec = codecs[header.fingerprint];
+    if (codec == null) {
+      print('unknown schema ${header.fingerprint}');
+      continue;
+    }
+    print(codec.decodeSingleObject(message));
+  }
+}</code></pre>
+<pre data-example-output="guide/single-object-registry"><code>{from: old app, hops: 0}
+{from: new app, hops: 2}</code></pre>
+<p>
+  <code>codec.decode(header.payload)</code> decodes the same datum, but does not check the
+  fingerprint again; <code>decodeSingleObject</code> does.
+</p>
+
+<h2>What is rejected</h2>
+<p>
+  <code>SingleObjectHeader.parse</code> throws <code>DecodeException</code> if the bytes are
+  shorter than the 10 bytes of the header or do not start with <code>C3 01</code>.
+  <code>decodeSingleObject</code> throws the same, and also if the fingerprint is not the one of
+  the codec's writer schema; the message names the fingerprint in hexadecimal. After the header,
+  the datum is decoded as by <code>decode</code>: invalid bytes, or bytes left over, throw
+  <code>DecodeException</code>.
+</p>
+<pre data-example="guide/single-object-errors"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final strings = AvroCodec(writer: Schema.parse('"string"'));
+  final longs = AvroCodec(writer: Schema.parse('"long"'));
+
+  for (final bytes in [
+    strings.encode('hi'), // no header at all
+    strings.encodeSingleObject('hi'), // the header names another schema
+  ]) {
+    try {
+      longs.decodeSingleObject(bytes);
+    } on DecodeException catch (e) {
+      print(e);
+    }
+  }
+}</code></pre>
+<pre data-example-output="guide/single-object-errors"><code>DecodeException at byte 0: single-object encoding needs 10 bytes of header, got 3
+DecodeException at byte 2: the fingerprint 0x8f014872634503c7 is not the writer schema's</code></pre>
+<p>
+  The fingerprint is of the <a href="fingerprints.html">canonical form</a>, which leaves out
+  documentation, aliases, defaults and logical types. Two schemas that differ only in those share
+  a fingerprint, and a codec accepts the messages of both.
+</p>

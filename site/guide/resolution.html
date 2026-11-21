@@ -1,0 +1,231 @@
+<!-- page: title="Schema resolution" track="guide" order=3 summary="Read data written with one schema as another: AvroCodec(writer:, reader:), promotions, field matching by name and alias, defaults, enum defaults, unions, and what throws ResolutionException when." -->
+<p class="lede">
+  Data written with one schema can be read as another, by the rules of the Avro specification.
+  <code>AvroCodec(writer:, reader:)</code> works out how, once, and then decodes every datum of
+  the writer schema into the shape of the reader schema.
+</p>
+
+<h2>One codec per pair of schemas</h2>
+<p>
+  The <a href="../start/glossary.html#writer-schema">writer schema</a> is the one the data was
+  encoded with; the <a href="../start/glossary.html#reader-schema">reader schema</a> is the one
+  your code expects. The constructor compiles the resolution of the two and throws
+  <code>ResolutionException</code> if they cannot resolve, before any data is read. Make the codec
+  once and keep it; <code>decode</code> then follows the compiled plan.
+</p>
+<p>
+  <code>encode</code> always writes with the writer schema; the reader schema plays no part in it.
+  Without <code>reader:</code>, or with the same object as the writer, the codec decodes the
+  writer schema as it is.
+</p>
+<pre data-example="guide/resolution-evolve"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final v1 = Schema.parse('''
+  {"type": "record", "name": "Reading", "namespace": "com.example", "fields": [
+    {"name": "sensor", "type": "string"},
+    {"name": "temp", "type": "int"},
+    {"name": "unit", "type": {"type": "enum", "name": "Unit", "symbols": ["C", "F", "K"]}},
+    {"name": "debug", "type": "string"}
+  ]}
+  ''');
+  final v2 = Schema.parse('''
+  {"type": "record", "name": "Reading", "namespace": "com.example", "fields": [
+    {"name": "device", "type": "string", "aliases": ["sensor"]},
+    {"name": "temp", "type": "double"},
+    {"name": "unit", "type": {"type": "enum", "name": "Unit", "symbols": ["C", "F", "OTHER"],
+                              "default": "OTHER"}},
+    {"name": "site", "type": "string", "default": "unknown"}
+  ]}
+  ''');
+
+  final writer = AvroCodec(writer: v1);
+  final old = [
+    writer.encode({'sensor': 'a1', 'temp': 21, 'unit': 'C', 'debug': 'x'}),
+    writer.encode({'sensor': 'b2', 'temp': 280, 'unit': 'K', 'debug': 'y'}),
+  ];
+
+  final upgrade = AvroCodec(writer: v1, reader: v2);
+  for (final bytes in old) {
+    print(upgrade.decode(bytes));
+  }
+}</code></pre>
+<pre data-example-output="guide/resolution-evolve"><code>{device: a1, temp: 21.0, unit: C, site: unknown}
+{device: b2, temp: 280.0, unit: OTHER, site: unknown}</code></pre>
+<p>
+  The example shows every rule of records at once: <code>sensor</code> is read into
+  <code>device</code> by its alias, <code>temp</code> is promoted from <code>int</code> to
+  <code>double</code>, the unknown symbol <code>K</code> becomes the reader's default
+  <code>OTHER</code>, <code>debug</code> is skipped, and <code>site</code> takes its default.
+</p>
+
+<h2>Which schemas match</h2>
+<p>Two schemas resolve when they match at the top, and their parts resolve in turn:</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Writer</th>                      <th>Reader</th>                                       <th>Matches when</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>a primitive</td>                 <td>the same primitive</td>                           <td>always</td></tr>
+    <tr><td><code>int</code></td>            <td><code>long</code>, <code>float</code>, <code>double</code></td><td>always: a promotion</td></tr>
+    <tr><td><code>long</code></td>           <td><code>float</code>, <code>double</code></td>      <td>always: a promotion</td></tr>
+    <tr><td><code>float</code></td>          <td><code>double</code></td>                          <td>always: a promotion</td></tr>
+    <tr><td><code>string</code></td>         <td><code>bytes</code></td>                           <td>always: the UTF-8 bytes</td></tr>
+    <tr><td><code>bytes</code></td>          <td><code>string</code></td>                          <td>always; bytes that are not UTF-8 throw <code>DecodeException</code> when decoded</td></tr>
+    <tr><td><code>record</code></td>         <td><code>record</code></td>                          <td>the names match</td></tr>
+    <tr><td><code>enum</code></td>           <td><code>enum</code></td>                            <td>the names match</td></tr>
+    <tr><td><code>fixed</code></td>          <td><code>fixed</code></td>                           <td>the names match and the sizes are equal</td></tr>
+    <tr><td><code>array</code></td>          <td><code>array</code></td>                           <td>the items resolve</td></tr>
+    <tr><td><code>map</code></td>            <td><code>map</code></td>                             <td>the values resolve</td></tr>
+    <tr><td>a union</td>                     <td>anything</td>                                     <td>see <a href="#unions">Unions</a></td></tr>
+    <tr><td>anything</td>                    <td>a union</td>                                      <td>see <a href="#unions">Unions</a></td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  Nothing else matches: a <code>long</code> is never read as an <code>int</code>, nor a
+  <code>double</code> as a <code>float</code>.
+</p>
+<p>
+  Named types match on their name without the namespace, as the specification says, or when the
+  reader type lists the writer's full name, or its name, among its aliases. A reader that renames
+  <code>old.Reading</code> to <code>new.Measurement</code> says <code>"aliases":
+  ["old.Reading"]</code>.
+</p>
+<p>
+  The reader's logical type applies to what is read. A <code>long</code> written as a plain number
+  is read as a <code>DateTime</code> if the reader says <code>timestamp-millis</code>; a decimal
+  written with a logical type is read as plain <code>bytes</code> if the reader has none. Two
+  decimals must agree in precision and scale, or the schemas do not resolve.
+</p>
+
+<h2>Records: fields by name and alias</h2>
+<ul>
+  <li>Each writer field is matched to the reader field of the same name, or else to the first reader field that lists the writer field's name among its <code>aliases</code>. The order of the fields may differ.</li>
+  <li>A writer field with no match in the reader is read and dropped.</li>
+  <li>A reader field with no match in the writer takes its default. Each decoded record gets its own copy of the default, so changing one record's list does not change the next.</li>
+  <li>A reader field with no match and no default makes the schemas unresolvable: the constructor throws.</li>
+</ul>
+<p>
+  The decoded map has the reader's fields, in the reader's order.
+</p>
+
+<h2>Enums</h2>
+<p>
+  A writer symbol is read as the reader symbol of the same name. A writer symbol the reader does
+  not have becomes the reader's <code>default</code>. Without a reader default, such a symbol
+  cannot be read; the codec is still made, because the data may never hold it, and
+  <code>decode</code> throws <code>ResolutionException</code> when it does.
+</p>
+
+<h2 id="unions">Unions</h2>
+<ul>
+  <li>
+    <strong>Writer union.</strong> Each writer branch is resolved against the reader schema on its
+    own. If no branch resolves, the constructor throws. If only some resolve, the codec is made,
+    and <code>decode</code> throws <code>ResolutionException</code> for a datum of a branch that
+    does not.
+  </li>
+  <li>
+    <strong>Reader union, writer not a union.</strong> The writer schema is read as the first
+    reader branch it matches, by the table above. If no branch matches, the constructor throws.
+    Because the first match wins, an <code>int</code> read as <code>["null", "double",
+    "long"]</code> becomes a <code>double</code>.
+  </li>
+  <li><strong>Both unions.</strong> Each writer branch is read as the first reader branch it matches.</li>
+</ul>
+<pre data-example="guide/resolution-unions"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final writer = Schema.parse('["null", "string", "int"]');
+  final data = AvroCodec(writer: writer);
+
+  // int resolves against long; null and string do not, but only the datum decides.
+  final asLong = AvroCodec(writer: writer, reader: Schema.parse('"long"'));
+  print(asLong.decode(data.encode(5)));
+  try {
+    asLong.decode(data.encode('five'));
+  } on ResolutionException catch (e) {
+    print(e.message);
+  }
+
+  // A plain int read as a union: the first branch it matches.
+  final widen = AvroCodec(
+    writer: Schema.parse('"int"'),
+    reader: Schema.parse('["null", "double", "long"]'),
+  );
+  print(widen.decode(AvroCodec(writer: Schema.parse('"int"')).encode(5)));
+}</code></pre>
+<pre data-example-output="guide/resolution-unions"><code>5
+the writer wrote a branch that does not resolve: ResolutionException at long&lt;string&gt;: string does not resolve to long
+5.0</code></pre>
+
+<h2>What throws, and when</h2>
+<p>
+  <code>ResolutionException</code> has a <code>path</code>. From the constructor, it points into
+  the schemas, such as <code>Reading.temp</code>, or <code>Reading.tags[]</code> for the items of
+  an array. From <code>decode</code>, it is the path of the value, such as <code>$.unit</code>.
+</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Problem</th>                                                             <th>Thrown by</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>The types do not match, such as <code>long</code> read as <code>int</code></td>   <td>the constructor</td></tr>
+    <tr><td>Two named types have different names and no alias joins them</td>               <td>the constructor</td></tr>
+    <tr><td>Two <code>fixed</code> types differ in size</td>                                 <td>the constructor</td></tr>
+    <tr><td>Two decimals differ in precision or scale</td>                                   <td>the constructor</td></tr>
+    <tr><td>A reader field has no default and the writer lacks it</td>                       <td>the constructor</td></tr>
+    <tr><td>No branch of a writer union resolves, or no reader branch matches the writer</td><td>the constructor</td></tr>
+    <tr><td>A writer symbol is unknown to a reader enum without a default</td>               <td><code>decode</code>, for a datum with that symbol</td></tr>
+    <tr><td>A datum is of a writer branch that does not resolve</td>                         <td><code>decode</code>, for a datum of that branch</td></tr>
+  </tbody>
+</table>
+</div>
+<pre data-example="guide/resolution-errors"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final pairs = [
+    ('"long"', '"int"'),
+    ('{"type": "record", "name": "A", "fields": []}',
+     '{"type": "record", "name": "B", "fields": []}'),
+    ('{"type": "record", "name": "A", "fields": []}',
+     '{"type": "record", "name": "A", "fields": [{"name": "id", "type": "long"}]}'),
+    ('{"type": "record", "name": "A", "fields": [{"name": "tags", "type": {"type": "array", "items": "string"}}]}',
+     '{"type": "record", "name": "A", "fields": [{"name": "tags", "type": {"type": "array", "items": "int"}}]}'),
+  ];
+  for (final (writer, reader) in pairs) {
+    try {
+      AvroCodec(writer: Schema.parse(writer), reader: Schema.parse(reader));
+    } on ResolutionException catch (e) {
+      print(e);
+    }
+  }
+
+  // An enum without a default resolves; only an unknown symbol fails, while decoding.
+  final colours = Schema.parse('{"type": "enum", "name": "C", "symbols": ["RED", "BLUE"]}');
+  final codec = AvroCodec(
+    writer: colours,
+    reader: Schema.parse('{"type": "enum", "name": "C", "symbols": ["RED"]}'),
+  );
+  final data = AvroCodec(writer: colours);
+  print(codec.decode(data.encode('RED')));
+  try {
+    codec.decode(data.encode('BLUE'));
+  } on ResolutionException catch (e) {
+    print(e);
+  }
+}</code></pre>
+<pre data-example-output="guide/resolution-errors"><code>ResolutionException at int: long does not resolve to int
+ResolutionException at B: A does not resolve to B
+ResolutionException at A.id: the reader field "id" has no default and the writer lacks it
+ResolutionException at A.tags[]: string does not resolve to int
+RED
+ResolutionException at $: the writer symbol "BLUE" is not in C, which has no default</code></pre>
+<p>
+  The resolution does not check the data: bytes that are not a valid encoding of the writer
+  schema still throw <code>DecodeException</code>, and the <a href="limits.html">limits</a> of the
+  codec apply as they do without a reader schema.
+</p>

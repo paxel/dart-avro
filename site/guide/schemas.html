@@ -1,0 +1,296 @@
+<!-- page: title="Schemas and attributes" track="guide" order=1 summary="Parse a schema, walk its sealed tree, and read its names, namespaces, doc, aliases, props, defaults and JSON text; what SchemaParseException tells you." -->
+<p class="lede">
+  <code>Schema.parse</code> turns the JSON text of a schema into an immutable tree. The tree keeps
+  everything the text says: names, documentation, aliases, defaults and the attributes the Avro
+  specification does not define.
+</p>
+
+<h2>Parse a schema</h2>
+<p>
+  <code>Schema.parse(jsonText, limits:)</code> reads one schema. A schema is a JSON string such as
+  <code>"int"</code>, an object such as <code>{"type": "record", …}</code>, or an array, which is
+  a union. Named types may refer to themselves and to each other by name, so a linked list is one
+  schema.
+</p>
+<pre data-example="guide/schemas-parse"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final schema = Schema.parse('''
+  {"type": "record", "name": "Node", "namespace": "com.example",
+   "fields": [
+     {"name": "value", "type": "long"},
+     {"name": "next", "type": ["null", "Node"], "default": null}
+   ]}
+  ''');
+
+  print(schema.type);
+  print(schema is RecordSchema);
+
+  final record = schema as RecordSchema;
+  final next = record.fields[1].schema as UnionSchema;
+  print(identical(next.branches[1], record)); // the reference is the record itself
+}</code></pre>
+<pre data-example-output="guide/schemas-parse"><code>record
+true
+true</code></pre>
+<p>
+  The text must fit the schema limits: 1 MiB and a nesting depth of 64 by default. Over a limit,
+  <code>parse</code> throws <code>LimitExceededException</code>; see
+  <a href="limits.html">Untrusted input and limits</a>.
+</p>
+
+<h2>The tree</h2>
+<p>
+  <code>Schema</code> is a <code>sealed</code> class, so a <code>switch</code> over it covers
+  every kind of schema and the analyzer tells you when one is missing.
+</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Class</th>                     <th>Avro type</th>                                         <th>Its own members</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>PrimitiveSchema</code></td><td><code>null</code>, <code>boolean</code>, <code>int</code>, <code>long</code>, <code>float</code>, <code>double</code>, <code>bytes</code>, <code>string</code></td><td>—</td></tr>
+    <tr><td><code>RecordSchema</code></td>   <td><code>record</code>, or <code>error</code></td>    <td><code>fields</code>, a list of <code>Field</code></td></tr>
+    <tr><td><code>EnumSchema</code></td>     <td><code>enum</code></td>                             <td><code>symbols</code>, <code>defaultSymbol</code></td></tr>
+    <tr><td><code>FixedSchema</code></td>    <td><code>fixed</code></td>                            <td><code>size</code></td></tr>
+    <tr><td><code>ArraySchema</code></td>    <td><code>array</code></td>                            <td><code>items</code></td></tr>
+    <tr><td><code>MapSchema</code></td>      <td><code>map</code></td>                              <td><code>values</code></td></tr>
+    <tr><td><code>UnionSchema</code></td>    <td>a union</td>                                       <td><code>branches</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  <code>RecordSchema</code>, <code>EnumSchema</code> and <code>FixedSchema</code> are the named
+  types. They share the sealed base <code>NamedSchema</code>, with <code>name</code>,
+  <code>namespace</code>, <code>fullName</code>, <code>aliases</code> and <code>doc</code>. Every
+  schema has <code>type</code>, <code>logicalType</code>, <code>props</code>, <code>json</code>
+  (the decoded JSON value) and <code>jsonText</code>. There are no builders: a schema is always
+  parsed from JSON.
+</p>
+<pre data-example="guide/schemas-switch"><code class="language-dart">import 'package:avro/avro.dart';
+
+String describe(Schema s) =&gt; switch (s) {
+  PrimitiveSchema(:final type) =&gt; type,
+  RecordSchema(:final fullName, :final fields) =&gt;
+    'record $fullName with ${fields.length} fields',
+  EnumSchema(:final symbols) =&gt; 'enum of ${symbols.join(', ')}',
+  FixedSchema(:final size) =&gt; 'fixed of $size bytes',
+  ArraySchema(:final items) =&gt; 'array of ${describe(items)}',
+  MapSchema(:final values) =&gt; 'map of ${describe(values)}',
+  UnionSchema(:final branches) =&gt; 'one of ${branches.map(describe).join(', ')}',
+};
+
+void main() {
+  final schema = Schema.parse('''
+  {"type": "record", "name": "Reading", "fields": [
+    {"name": "sensor", "type": {"type": "fixed", "name": "Id", "size": 4}},
+    {"name": "unit", "type": {"type": "enum", "name": "Unit", "symbols": ["C", "F"]}},
+    {"name": "values", "type": {"type": "array", "items": "double"}},
+    {"name": "labels", "type": {"type": "map", "values": "string"}},
+    {"name": "note", "type": ["null", "string"]}
+  ]}
+  ''') as RecordSchema;
+
+  print(describe(schema));
+  for (final field in schema.fields) {
+    print('${field.name}: ${describe(field.schema)}');
+  }
+}</code></pre>
+<pre data-example-output="guide/schemas-switch"><code>record Reading with 5 fields
+sensor: fixed of 4 bytes
+unit: enum of C, F
+values: array of double
+labels: map of string
+note: one of null, string</code></pre>
+
+<h2>Names and namespaces</h2>
+<p>
+  A named type has a <code>name</code> and a <code>namespace</code>; <code>fullName</code> joins
+  them with a dot. The rules are the specification's:
+</p>
+<ul>
+  <li>A name with a dot, such as <code>"com.example.User"</code>, is a full name; its namespace is the part before the last dot, and a <code>namespace</code> attribute beside it is ignored.</li>
+  <li>Otherwise the <code>namespace</code> attribute applies, and without one the namespace of the enclosing named type.</li>
+  <li>The empty namespace, <code>""</code>, is the null namespace: <code>namespace</code> is <code>null</code> and the full name is the name alone.</li>
+  <li>A reference by name inside a namespace is looked up as a full name in that namespace first, then as given.</li>
+</ul>
+<pre data-example="guide/schemas-names"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final schema = Schema.parse('''
+  {"type": "record", "name": "Order", "namespace": "com.shop",
+   "fields": [
+     {"name": "state", "type": {"type": "enum", "name": "State", "symbols": ["NEW", "PAID"]}},
+     {"name": "id", "type": {"type": "fixed", "name": "org.ids.Id", "size": 8}},
+     {"name": "raw", "type": {"type": "fixed", "name": "Raw", "namespace": "", "size": 2}},
+     {"name": "previous", "type": ["null", "State"]}
+   ]}
+  ''') as RecordSchema;
+
+  for (final field in schema.fields) {
+    final type = switch (field.schema) {
+      final NamedSchema named =&gt; named,
+      UnionSchema(:final branches) =&gt; branches[1] as NamedSchema,
+      _ =&gt; throw StateError('not named'),
+    };
+    print('${field.name}: ${type.fullName} (namespace ${type.namespace})');
+  }
+}</code></pre>
+<pre data-example-output="guide/schemas-names"><code>state: com.shop.State (namespace com.shop)
+id: org.ids.Id (namespace org.ids)
+raw: Raw (namespace null)
+previous: com.shop.State (namespace com.shop)</code></pre>
+
+<h2>Doc, aliases and props</h2>
+<p>
+  <code>doc</code> is the documentation of a named type or a field, or <code>null</code>. The
+  <code>aliases</code> of a named type are full names: an alias without a dot takes the type's
+  namespace. The aliases of a field are kept as given. <a href="resolution.html">Schema
+  resolution</a> uses both.
+</p>
+<p>
+  <a href="../start/glossary.html#props">Props</a> are the attributes the specification does not
+  define, such as <code>"axt.title"</code>, as decoded JSON values. Types and fields each have
+  their own <code>props</code>; a union has none, because it is a JSON array. The attributes of a
+  logical type, such as <code>precision</code> and <code>scale</code> of a decimal, are props as
+  well. <code>logicalType</code> returns the attribute as written, even for a logical type the
+  package does not know; such a schema is read as its underlying type.
+</p>
+<pre data-example="guide/schemas-attributes"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final memo = Schema.parse('''
+  {"type": "record", "name": "Memo", "namespace": "com.example",
+   "doc": "A short note.", "aliases": ["Note", "legacy.Memo"], "axt.title": "Memo",
+   "fields": [
+     {"name": "text", "type": "string", "doc": "The note itself.",
+      "aliases": ["body"], "axt.maxLength": 280},
+     {"name": "price", "type": {"type": "bytes", "logicalType": "decimal",
+                                "precision": 9, "scale": 2}},
+     {"name": "colour", "type": {"type": "string", "logicalType": "x-colour"}}
+   ]}
+  ''') as RecordSchema;
+
+  print(memo.doc);
+  print(memo.aliases);
+  print(memo.props);
+
+  final text = memo.fields[0];
+  print('${text.doc} ${text.aliases} ${text.props}');
+
+  final price = memo.fields[1].schema;
+  print('${price.logicalType} ${price.props}');
+  print(memo.fields[2].schema.logicalType);
+}</code></pre>
+<pre data-example-output="guide/schemas-attributes"><code>A short note.
+[com.example.Note, legacy.Memo]
+{axt.title: Memo}
+The note itself. [body] {axt.maxLength: 280}
+decimal {precision: 9, scale: 2}
+x-colour</code></pre>
+<p>
+  A field also has <code>order</code>: <code>ascending</code> (the default),
+  <code>descending</code> or <code>ignore</code>. The package keeps it but does not sort by it.
+</p>
+
+<h2>Defaults as Dart values</h2>
+<p>
+  A field's default is parsed when the schema is, and must fit the field's schema, or
+  <code>parse</code> throws <code>SchemaParseException</code>. <code>hasDefault</code> says whether
+  the field has one; <code>defaultValue</code> holds it as the Dart value a decoder would return,
+  so a default of <code>null</code> and no default differ only in <code>hasDefault</code>.
+</p>
+<ul>
+  <li>A <code>bytes</code> or <code>fixed</code> default is a JSON string of the characters U+0000 to U+00FF, one per byte, as the specification says; it becomes a <code>Uint8List</code>.</li>
+  <li>A default of a logical type is written as its underlying type and becomes the logical type's Dart value: <code>0</code> for a <code>date</code> is <code>AvroDate(1970, 1, 1)</code>.</li>
+  <li>A record default may leave out fields that have defaults of their own.</li>
+  <li>A union default is the value of the first branch it fits.</li>
+</ul>
+<pre data-example="guide/schemas-defaults"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final schema = Schema.parse(r'''
+  {"type": "record", "name": "Settings", "fields": [
+    {"name": "magic", "type": {"type": "fixed", "name": "Magic", "size": 2},
+     "default": "Ã\u0001"},
+    {"name": "since", "type": {"type": "int", "logicalType": "date"}, "default": 20413},
+    {"name": "tags", "type": {"type": "array", "items": "string"}, "default": ["new"]},
+    {"name": "nickname", "type": ["null", "string"], "default": null},
+    {"name": "email", "type": ["null", "string"]}
+  ]}
+  ''') as RecordSchema;
+
+  for (final f in schema.fields) {
+    print('${f.name}: ${f.hasDefault} ${f.defaultValue} '
+        '(${f.defaultValue.runtimeType})');
+  }
+}</code></pre>
+<pre data-example-output="guide/schemas-defaults"><code>magic: true [195, 1] (Uint8List)
+since: true 2025-11-21 (AvroDate)
+tags: true [new] (List&lt;Object?&gt;)
+nickname: true null (Null)
+email: false null (Null)</code></pre>
+<p>
+  Defaults serve schema resolution only: <code>encode</code> still needs every field. See
+  <a href="values.html#records-are-strict">Values and unions</a>.
+</p>
+
+<h2>The JSON text</h2>
+<p>
+  <code>jsonText</code> of the parsed schema is the text exactly as you passed it, spaces
+  included. A nested schema has no text of its own; its <code>jsonText</code> is its JSON value
+  encoded again. For a reference to a named type, that is the definition's JSON. The
+  <a href="fingerprints.html">canonical form</a> is a different thing: the normalised text that
+  fingerprints are made of.
+</p>
+<pre data-example="guide/schemas-json-text"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final schema = Schema.parse('''{ "type": "array",  "items": {"type": "fixed", "name": "Id", "size": 4} }''');
+
+  print(schema.jsonText);
+  print((schema as ArraySchema).items.jsonText);
+}</code></pre>
+<pre data-example-output="guide/schemas-json-text"><code>{ "type": "array",  "items": {"type": "fixed", "name": "Id", "size": 4} }
+{"type":"fixed","name":"Id","size":4}</code></pre>
+<p>
+  <a href="container-files.html">AvroFileWriter</a> writes the root text into a container file's
+  header, unless you pass another <code>schemaJson</code>.
+</p>
+
+<h2>When parsing fails</h2>
+<p>
+  Text that is not JSON, or not a valid Avro schema, throws <code>SchemaParseException</code>. Its
+  <code>message</code> says what is wrong, and its <code>path</code> says where: the full name of
+  the record and the index of the field, such as <code>Memo.fields[1].type</code>, or
+  <code>$</code> and an index for the root. <code>path</code> is <code>null</code> when the text
+  is not JSON.
+</p>
+<pre data-example="guide/schemas-errors"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  for (final text in [
+    '{"type": "record", "name": "Memo", "fields": [{"name": "text", "type": "strng"}]}',
+    '{"type": "record", "name": "Memo", "fields": [{"name": "n", "type": "int", "default": "1"}]}',
+    '{"type": "enum", "name": "Colour", "symbols": ["RED", "RED"]}',
+    '["null", "string", "null"]',
+    '{"type": "record", "name": "Memo"',
+  ]) {
+    try {
+      Schema.parse(text);
+    } on SchemaParseException catch (e) {
+      print('${e.path}: ${e.message}');
+    }
+  }
+}</code></pre>
+<pre data-example-output="guide/schemas-errors"><code>Memo.fields[0].type: unknown type "strng"
+Memo.fields[0].default: the default "1" does not fit int
+$: the symbol "RED" is twice
+$[2]: the union holds null twice
+null: not JSON: Unexpected end of input</code></pre>
+<p>
+  Among the checks: names and symbols must match <code>[A-Za-z_][A-Za-z0-9_]*</code>, a named
+  type is defined once, a union holds no union and no two branches of the same type or full name,
+  an enum default is one of its symbols, and a <code>fixed</code> has a non-negative size.
+</p>

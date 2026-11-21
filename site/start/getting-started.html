@@ -1,8 +1,8 @@
 <!-- page: title="Getting started" track="start" order=1 summary="Add the dependency, parse a schema, encode and decode a record, write and read a container file: avro in five minutes." -->
 <p class="lede">
   Five minutes, four steps: add the package, parse a schema, encode and decode a record, and
-  write and read a container file. The examples build on each other; put them in one
-  <code>main()</code> in that order.
+  write and read a container file. Each example is a complete program: put it in a file of a
+  package that depends on <code>avro</code>, and run it with <code>dart run</code>.
 </p>
 
 <h2>Add the dependency</h2>
@@ -10,28 +10,34 @@
   The package needs Dart 3.13 or later and runs on the Dart VM and AOT, not on Flutter web. Add it
   to the <code>dependencies</code> of your <code>pubspec.yaml</code>:
 </p>
-<pre><code>dependencies:
+<pre data-fragment><code class="language-yaml">dependencies:
   avro: ^0.1.0</code></pre>
 <p>Run <code>dart pub get</code>, or <code>flutter pub get</code> in a Flutter app, and import the one library:</p>
-<pre><code>import 'package:avro/avro.dart';</code></pre>
+<pre data-fragment><code class="language-dart">import 'package:avro/avro.dart';</code></pre>
 
 <h2>Parse a schema</h2>
 <p>
   A schema is JSON text. <code>Schema.parse</code> reads it into an immutable tree, and throws
   <code>SchemaParseException</code> if the text is not a valid Avro schema.
 </p>
-<pre><code>final schema = Schema.parse('''
-{
-  "type": "record",
-  "name": "User",
-  "namespace": "com.example",
-  "fields": [
-    {"name": "name", "type": "string"},
-    {"name": "age", "type": "int"},
-    {"name": "email", "type": ["null", "string"], "default": null}
-  ]
-}
-''');</code></pre>
+<pre data-example="start/parse"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final schema = Schema.parse('''
+  {
+    "type": "record",
+    "name": "User",
+    "namespace": "com.example",
+    "fields": [
+      {"name": "name", "type": "string"},
+      {"name": "age", "type": "int"},
+      {"name": "email", "type": ["null", "string"], "default": null}
+    ]
+  }
+  ''');
+  print((schema as RecordSchema).fullName);
+}</code></pre>
+<pre data-example-output="start/parse"><code>com.example.User</code></pre>
 
 <h2>Encode and decode a record</h2>
 <p>
@@ -39,13 +45,31 @@
   <code>Map&lt;String, Object?&gt;</code> with one entry per field. Every field must be there, even
   one with a default.
 </p>
-<pre><code>final codec = AvroCodec(writer: schema);
+<pre data-example="start/encode"><code class="language-dart">import 'package:avro/avro.dart';
 
-final bytes = codec.encode({'name': 'Ada', 'age': 36, 'email': null});
-// bytes is a Uint8List: [6, 65, 100, 97, 72, 0]
+void main() {
+  final schema = Schema.parse('''
+  {
+    "type": "record",
+    "name": "User",
+    "namespace": "com.example",
+    "fields": [
+      {"name": "name", "type": "string"},
+      {"name": "age", "type": "int"},
+      {"name": "email", "type": ["null", "string"], "default": null}
+    ]
+  }
+  ''');
+  final codec = AvroCodec(writer: schema);
 
-final user = codec.decode(bytes) as Map&lt;String, Object?&gt;;
-print(user['name']); // Ada</code></pre>
+  final bytes = codec.encode({'name': 'Ada', 'age': 36, 'email': null});
+  print(bytes); // a Uint8List
+
+  final user = codec.decode(bytes) as Map&lt;String, Object?&gt;;
+  print(user['name']);
+}</code></pre>
+<pre data-example-output="start/encode"><code>[6, 65, 100, 97, 72, 0]
+Ada</code></pre>
 <p>
   <code>encode</code> throws <code>EncodeException</code> if the value does not fit the schema. The
   exception names the place in the value: <code>$.age</code> if <code>age</code> is not an
@@ -66,10 +90,39 @@ print(user['name']); // Ada</code></pre>
   libraries read and write the same files. <code>AvroFileWriter</code> writes one in memory;
   <code>close</code> returns its bytes.
 </p>
-<pre><code>final writer = AvroFileWriter(codec, compression: 'deflate');
-writer.add({'name': 'Ada', 'age': 36, 'email': 'ada@example.com'});
-writer.add({'name': 'Alan', 'age': 41, 'email': null});
-final Uint8List file = writer.close();</code></pre>
+<pre data-example="start/file"><code class="language-dart">import 'dart:typed_data';
+
+import 'package:avro/avro.dart';
+
+void main() {
+  final schema = Schema.parse('''
+  {
+    "type": "record",
+    "name": "User",
+    "namespace": "com.example",
+    "fields": [
+      {"name": "name", "type": "string"},
+      {"name": "age", "type": "int"},
+      {"name": "email", "type": ["null", "string"], "default": null}
+    ]
+  }
+  ''');
+  final codec = AvroCodec(writer: schema);
+
+  final writer = AvroFileWriter(codec, compression: 'deflate');
+  writer.add({'name': 'Ada', 'age': 36, 'email': 'ada@example.com'});
+  writer.add({'name': 'Alan', 'age': 41, 'email': null});
+  final Uint8List file = writer.close();
+
+  final reader = AvroFileReader(file);
+  print(reader.header.compression);
+  for (final record in reader.records()) {
+    print(record);
+  }
+}</code></pre>
+<pre data-example-output="start/file"><code>deflate
+{name: Ada, age: 36, email: ada@example.com}
+{name: Alan, age: 41, email: null}</code></pre>
 <p>
   <code>Uint8List</code> comes from <code>dart:typed_data</code>. To store the file, write the
   bytes, for example with <code>File('users.avro').writeAsBytesSync(file)</code> from
@@ -79,14 +132,6 @@ final Uint8List file = writer.close();</code></pre>
   <code>AvroFileReader</code> reads the header at once. <code>records()</code> decodes the
   records lazily, one block at a time, with the schema stored in the file.
 </p>
-<pre><code>final reader = AvroFileReader(file);
-print(reader.header.compression); // deflate
-
-for (final record in reader.records()) {
-  print(record);
-}
-// {name: Ada, age: 36, email: ada@example.com}
-// {name: Alan, age: 41, email: null}</code></pre>
 
 <h2>Next steps</h2>
 <ul>

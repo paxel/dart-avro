@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Single-object encoding: `encodeSingleObject`, `decodeSingleObject`, and `SingleObjectHeader.parse` to read a message's fingerprint before choosing its codec.
 - `AvroFileReader` reads object container files compressed with `null` or `deflate`: the header first, then the records lazily, one block at a time, with the file's schema or a codec of the caller's choice.
 - `AvroFileWriter` writes object container files compressed with `null` or `deflate`, with the caller's metadata in its order, the schema text and sync marker of the caller's choice, and blocks ended by size or by `flush`.
+- User documentation on GitHub Pages: a Start track, a Guide with one task per page and a Reference, with every example run as a test.
 - Union values whose branch is ambiguous are written with `Branch`.
 - `AvroLimits` bounds schema size, schema and value nesting, and empty-item counts, with finite defaults.
 
