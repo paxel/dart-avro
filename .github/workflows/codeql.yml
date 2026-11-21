@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   codeql:
-    uses: paxel/gates/.github/workflows/codeql.yml@02a81ad45b815cbed94f9bb6841424a624e8155f # v1.2.0
+    uses: paxel/gates/.github/workflows/codeql.yml@ccb900ba534004ed8bb410f1f48c4097d9a9f530 # v1.3.0
     permissions:
       contents: read
       security-events: write
