@@ -42,3 +42,13 @@ rule = "MaintainedID"
 ignoreUntil = 2027-02-19
 reason = """The repository was created on 2026-11-21; Scorecard rates a repository younger \
 than 90 days as not maintained whatever its activity. The finding clears by itself then."""
+
+[[IgnoredAlerts]]
+tool = "SonarQube Cloud"
+rule = "pythonsecurity:S8707"
+path = "tool/interop/interop.py"
+ignoreUntil = 2027-05-21
+reason = """The interop job's own script: its directory argument comes from the job's command \
+line in CI, which writes to $RUNNER_TEMP. It is a developer tool, not in the pub.dev archive, \
+and takes no input from anybody else."""
+
