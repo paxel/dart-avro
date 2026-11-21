@@ -10,9 +10,9 @@
 [[parts]]
 name = "dart"
 lcov = "coverage/dart.lcov"
-floor = 0.00
+floor = 93.54
 
 [[parts]]
 name = "site"
 lcov = "coverage/site.lcov"
-floor = 0.00
+floor = 95.77

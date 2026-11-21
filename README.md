@@ -4,6 +4,7 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/paxel/dart-avro/badge)](https://scorecard.dev/viewer/?uri=github.com/paxel/dart-avro)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=paxel_dart-avro&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=paxel_dart-avro)
 [![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fpaxel%2Fdart-avro%2Fsummer%2F.github%2Fbadges%2Fcoverage-dart.json)](coverage-floors.toml)
+[![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fpaxel%2Fdart-avro%2Fsummer%2F.github%2Fbadges%2Fcoverage-site.json)](coverage-floors.toml)
 [![Fuzz](https://github.com/paxel/dart-avro/actions/workflows/fuzz.yml/badge.svg?branch=summer)](https://github.com/paxel/dart-avro/actions/workflows/fuzz.yml)
 [![Release](https://img.shields.io/github/v/release/paxel/dart-avro)](https://github.com/paxel/dart-avro/releases)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-MIT)
