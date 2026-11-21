@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'exceptions.dart';
 import 'limits.dart';
+import 'logical.dart';
 
 /// The names of Avro's primitive types.
 const primitiveTypeNames = {
@@ -556,8 +557,29 @@ final class _Invalid {
 
 const _invalid = _Invalid();
 
-/// The Dart value of a JSON default of [schema], or [_invalid].
+final class _NoLogicalValue implements Exception {
+  const _NoLogicalValue();
+}
+
+/// The Dart value of a JSON default of [schema], or [_invalid]. A default of a logical type
+/// is given as its underlying type and becomes the logical type's Dart value.
 Object? defaultValueOf(Schema schema, Object? json) {
+  final raw = _rawDefault(schema, json);
+  final logical = logicalOf(schema);
+  if (logical == null || raw is _Invalid) return raw;
+  try {
+    return fromUnderlying(
+      logical,
+      schema,
+      raw,
+      (_) => throw const _NoLogicalValue(),
+    );
+  } on _NoLogicalValue {
+    return _invalid;
+  }
+}
+
+Object? _rawDefault(Schema schema, Object? json) {
   Uint8List? bytesOf(Object? j) {
     if (j is! String) return null;
     final out = Uint8List(j.length);

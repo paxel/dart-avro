@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'binary.dart';
 import 'exceptions.dart';
 import 'limits.dart';
+import 'logical.dart';
 import 'schema.dart';
 
 /// A value of a union, with the branch it belongs to named explicitly.
@@ -92,6 +93,24 @@ final class _Encoder {
       path: path,
     );
     if (value is Branch && schema is! UnionSchema) wrong('a plain value');
+    final logical = logicalOf(schema);
+    if (logical != null) {
+      encodeRaw(
+        schema,
+        toUnderlying(logical, schema, value, path),
+        path,
+        depth,
+      );
+    } else {
+      encodeRaw(schema, value, path, depth);
+    }
+  }
+
+  void encodeRaw(Schema schema, Object? value, String path, int depth) {
+    Never wrong(String expected) => throw EncodeException(
+      'expected $expected for ${branchName(schema)}, got ${value.runtimeType}',
+      path: path,
+    );
     switch (schema) {
       case PrimitiveSchema(type: 'null'):
         if (value != null) wrong('null');
@@ -225,7 +244,14 @@ bool _isInt32(int v) => v >= -0x80000000 && v <= 0x7fffffff;
 
 /// Whether [value] belongs to [schema] at a glance: by its Dart type, the size of a fixed,
 /// the symbols of an enum and the fields of a record. Used to infer a union's branch.
-bool _fits(Schema schema, Object? value) => switch (schema) {
+bool _fits(Schema schema, Object? value) {
+  final logical = logicalOf(schema);
+  return logical != null
+      ? fitsLogical(logical, value)
+      : _fitsRaw(schema, value);
+}
+
+bool _fitsRaw(Schema schema, Object? value) => switch (schema) {
   PrimitiveSchema(type: 'null') => value == null,
   PrimitiveSchema(type: 'boolean') => value is bool,
   PrimitiveSchema(type: 'int') => value is int && _isInt32(value),
@@ -336,6 +362,18 @@ final class _Decoder {
         limit: 'maxValueDepth',
       );
     }
+    final logical = logicalOf(schema);
+    if (logical == null) return decodeRaw(schema, path, depth);
+    final start = input.offset;
+    return fromUnderlying(
+      logical,
+      schema,
+      decodeRaw(schema, path, depth),
+      (message) => throw DecodeException(message, offset: start, path: path),
+    );
+  }
+
+  Object? decodeRaw(Schema schema, String path, int depth) {
     switch (schema) {
       case PrimitiveSchema(type: 'null'):
         return null;
