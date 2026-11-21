@@ -51,6 +51,25 @@ void main() {
       );
     });
 
+    test('a fingerprint with the high bit set is named in hexadecimal', () {
+      final bytes = Uint8List.fromList([
+        0xc3,
+        0x01,
+        ...List.filled(8, 0xff),
+        0,
+      ]);
+      expect(
+        () => codec.decodeSingleObject(bytes),
+        throwsA(
+          isA<DecodeException>().having(
+            (e) => e.message,
+            'message',
+            contains('0xffffffffffffffff'),
+          ),
+        ),
+      );
+    });
+
     test("another schema's fingerprint", () {
       final other = AvroCodec(writer: Schema.parse('"bytes"'));
       expect(

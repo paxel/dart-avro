@@ -129,7 +129,7 @@ extension SingleObjectEncoding on AvroCodec {
     final header = SingleObjectHeader.parse(bytes);
     if (header.fingerprint != writer.crc64) {
       throw DecodeException(
-        'the fingerprint 0x${header.fingerprint.toUnsigned(64).toRadixString(16)} is not '
+        'the fingerprint 0x${BigInt.from(header.fingerprint).toUnsigned(64).toRadixString(16)} is not '
         "the writer schema's",
         offset: 2,
       );
