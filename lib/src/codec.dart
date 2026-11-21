@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'binary.dart';
 import 'exceptions.dart';
+import 'fingerprint.dart';
 import 'limits.dart';
 import 'logical.dart';
 import 'resolve.dart';
@@ -67,6 +68,73 @@ final class AvroCodec {
   /// bytes are left over after the datum.
   Object? decode(Uint8List bytes) {
     final input = BinaryReader(bytes);
+    final value = decodeFrom(this, input);
+    if (input.remaining != 0) {
+      input.fail('${input.remaining} bytes left over after the datum');
+    }
+    return value;
+  }
+}
+
+/// The header of a datum in single-object encoding: the marker `C3 01` and the writer
+/// schema's CRC-64-AVRO fingerprint.
+final class SingleObjectHeader {
+  const SingleObjectHeader._(this.fingerprint, this.payload);
+
+  /// Reads the header of [bytes] without decoding the datum after it.
+  ///
+  /// Throws [DecodeException] if [bytes] are shorter than the header or do not start with
+  /// the marker.
+  factory SingleObjectHeader.parse(Uint8List bytes) {
+    if (bytes.length < 10) {
+      throw DecodeException(
+        'single-object encoding needs 10 bytes of header, got ${bytes.length}',
+        offset: 0,
+      );
+    }
+    if (bytes[0] != 0xc3 || bytes[1] != 0x01) {
+      throw const DecodeException(
+        'not single-object encoding: the marker C3 01 is missing',
+        offset: 0,
+      );
+    }
+    return SingleObjectHeader._(
+      crc64FromBytes(Uint8List.sublistView(bytes, 2, 10)),
+      Uint8List.sublistView(bytes, 10),
+    );
+  }
+
+  /// The CRC-64-AVRO fingerprint of the writer schema, as the 64-bit pattern in an `int`.
+  final int fingerprint;
+
+  /// The datum after the header, a view of the parsed bytes.
+  final Uint8List payload;
+}
+
+/// Single-object encoding: the datum after a header that names the writer schema.
+extension SingleObjectEncoding on AvroCodec {
+  /// Encodes [value] in single-object encoding, with the writer schema's fingerprint.
+  Uint8List encodeSingleObject(Object? value) {
+    final out = BinaryWriter()
+      ..writeByte(0xc3)
+      ..writeByte(0x01)
+      ..writeFixed(crc64ToBytes(writer.crc64));
+    encodeInto(this, out, value);
+    return out.toBytes();
+  }
+
+  /// Decodes a datum in single-object encoding. Throws [DecodeException] if the header is
+  /// missing or names another schema than the writer's, or if the datum is not valid.
+  Object? decodeSingleObject(Uint8List bytes) {
+    final header = SingleObjectHeader.parse(bytes);
+    if (header.fingerprint != writer.crc64) {
+      throw DecodeException(
+        'the fingerprint 0x${header.fingerprint.toUnsigned(64).toRadixString(16)} is not '
+        "the writer schema's",
+        offset: 2,
+      );
+    }
+    final input = BinaryReader(bytes, 10);
     final value = decodeFrom(this, input);
     if (input.remaining != 0) {
       input.fail('${input.remaining} bytes left over after the datum');
