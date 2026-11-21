@@ -24,7 +24,8 @@ final class AvroLimits {
     maxZeroSizeItems: null,
   );
 
-  /// The size of one data block of a container file after decompression.
+  /// The size of one data block of a container file after decompression, and, when it is
+  /// read from a stream, before, as well as the size of the header read from a stream.
   final int? maxBlockBytes;
 
   /// The size of all data blocks of a container file together after decompression.

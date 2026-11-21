@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'binary.dart';
+import 'codec.dart' show Branch;
 import 'exceptions.dart';
 import 'logical.dart';
 import 'schema.dart';
@@ -76,15 +77,19 @@ final class _WriterUnion extends Plan {
 
 /// The writer's schema read as one branch of the reader's union.
 final class _ReaderBranch extends Plan {
-  const _ReaderBranch(this.plan);
+  const _ReaderBranch(this.plan, this.name);
 
   final Plan plan;
+
+  /// The name of the [Branch] the value is decoded into; null to decode it plain.
+  final String? name;
 }
 
 /// Compiles the plan that reads data of [writer] as [reader]. Throws [ResolutionException]
-/// if the schemas do not resolve.
-Plan resolve(Schema writer, Schema reader) =>
-    _Resolver().plan(writer, reader, branchName(reader));
+/// if the schemas do not resolve. With [branches], values of the reader's unions with two or
+/// more non-null branches, defaults included, are read as a [Branch] of the reader's branch.
+Plan resolve(Schema writer, Schema reader, {bool branches = false}) =>
+    _Resolver(branches).plan(writer, reader, branchName(reader));
 
 bool _namesMatch(NamedSchema w, NamedSchema r) =>
     w.name == r.name ||
@@ -100,6 +105,11 @@ const _promotions = {
 };
 
 final class _Resolver {
+  _Resolver(this.decodeBranches);
+
+  /// Whether unions are read as a [Branch]; see [resolve].
+  final bool decodeBranches;
+
   final Map<(RecordSchema, RecordSchema), _Record> records = {};
 
   Never fail(String message, String path) =>
@@ -136,7 +146,13 @@ final class _Resolver {
     }
     if (r is UnionSchema) {
       final i = readerBranch(w, r, path);
-      if (i >= 0) return _ReaderBranch(plan(w, r.branches[i], path));
+      if (i >= 0) {
+        final b = r.branches[i];
+        return _ReaderBranch(
+          plan(w, b, path),
+          decodeBranches && decodesAsBranch(r, b) ? branchName(b) : null,
+        );
+      }
       fail(
         'no branch of the reader union ${r.branches.map(branchName).join(', ')} '
         'matches ${branchName(w)}',
@@ -275,7 +291,12 @@ final class _Resolver {
           '$path.${rf.name}',
         );
       }
-      defaults.add((rf.name, rf.defaultValue));
+      defaults.add((
+        rf.name,
+        decodeBranches
+            ? defaultValueOf(rf.schema, rf.json['default'], branches: true)
+            : rf.defaultValue,
+      ));
     }
     node.steps = steps;
     node.defaults = defaults;
@@ -290,6 +311,7 @@ Object? copyDefault(Object? v) => switch (v) {
   final Map<String, Object?> m => {
     for (final e in m.entries) e.key: copyDefault(e.value),
   },
+  Branch(:final name, :final value) => Branch(name, copyDefault(value)),
   _ => v,
 };
 
@@ -397,8 +419,9 @@ Object? runPlan(
             path: path,
           ),
         };
-      case _ReaderBranch(:final plan):
-        return run(plan, path, depth);
+      case _ReaderBranch(:final plan, :final name):
+        final value = run(plan, path, depth);
+        return name == null ? value : Branch(name, value);
     }
   }
 

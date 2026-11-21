@@ -1,9 +1,11 @@
-<!-- page: title="Code generation" track="guide" order=9 summary="Generate immutable Dart classes and enums from .avsc files with dart run avro:generate: inputs, --prefix, warnings and exit codes, what each schema construct becomes, the generated members, and TypedCodec for encoding, resolution, single-object encoding and container files." -->
+<!-- page: title="Code generation" track="guide" order=12 summary="Generate immutable Dart classes, enums and sealed unions from .avsc files with dart run avro:generate: inputs, --prefix, warnings and exit codes, what each schema construct becomes, the break from 0.2.0, the generated members, TypedCodec for encoding, JSON, resolution, single-object encoding and container files, and generateDart of package:avro/generate.dart." -->
 <p class="lede">
   <code>dart run avro:generate</code> turns <code>.avsc</code> files into one Dart library: an
-  immutable class for every record and a Dart <code>enum</code> for every enum. A
-  <code>TypedCodec</code> then encodes and decodes those classes with everything an
-  <code>AvroCodec</code> does: schema resolution, single-object encoding and container files.
+  immutable class for every record, a Dart <code>enum</code> for every enum, and a
+  <code>sealed class</code> for each place where a union of two or more non-null branches is
+  used. A <code>TypedCodec</code> then encodes and decodes those classes with everything an
+  <code>AvroCodec</code> does: schema resolution, single-object encoding, JSON and container
+  files.
 </p>
 
 <h2>Run the command</h2>
@@ -49,7 +51,8 @@
 <p>
   Warnings go to standard error too, and the command still succeeds: a <code>--prefix</code>
   whose namespace has no record or enum, and a type defined in several files whose
-  documentation or attributes differ (see <a href="#inline-and-repeated-types">below</a>).
+  documentation or attributes differ (see <a href="#inline-and-repeated-types">below</a>). A run
+  that fails prints only its error, without the warnings it would have given.
 </p>
 <p>
   Commit the generated file and review it like any other source. When a schema changes, run the
@@ -132,7 +135,7 @@ CALM</code></pre>
     <tr><td><code>bytes</code>, <code>fixed</code></td>         <td><code>Uint8List</code>; a fixed gets no class</td></tr>
     <tr><td><code>array</code>, <code>map</code></td>           <td><code>List&lt;T&gt;</code>, <code>Map&lt;String, T&gt;</code></td></tr>
     <tr><td><code>["null", T]</code>, in either order</td>      <td><code>T?</code></td></tr>
-    <tr><td>any other union</td>                                <td><code>Object?</code>, holding the generic value</td></tr>
+    <tr><td>any other union</td>                                <td>A <code>sealed class</code> per place of use, with a <code>final class</code> per branch</td></tr>
     <tr><td>a logical type</td>                                 <td>Its Dart value, as in the <a href="../reference/values.html#logical-types">value mapping</a>: <code>DateTime</code>, <code>AvroDecimal</code>, …</td></tr>
     <tr><td>a field of type <code>null</code></td>              <td>No Dart field; its value is always null</td></tr>
   </tbody>
@@ -157,10 +160,15 @@ CALM</code></pre>
 
 <h3>Unions</h3>
 <p>
-  A union of <code>null</code> and one type is a nullable field. Any other union is an
-  <code>Object?</code> holding the generic value of its branch, as an <code>AvroCodec</code> takes
-  it: where several branches fit, a <code>Branch</code> names one. Decoding gives the plain value,
-  never a <code>Branch</code>. Lists, maps and bytes compare by their elements:
+  A union of <code>null</code> and one type is a nullable field. Any other union is a
+  <code>sealed class</code> named after the record and the field, here <code>ReadingValue</code>,
+  with a <code>final class</code> per branch that holds its value, such as
+  <code>ReadingValueLong</code>; a <code>null</code> branch makes the field nullable. The class
+  names the branch, so decoding keeps it and a <code>switch</code> over the field is exhaustive.
+  A branch class is named after the simple name of a named branch, without a prefix, or after the
+  type name of any other: <code>…Int</code>, <code>…Long</code>, <code>…Array</code>,
+  <code>…Map</code>. A union inside an array or a map adds <code>Item</code> or
+  <code>Value</code>. Lists, maps and bytes compare by their elements:
 </p>
 <pre data-example-schema="guide/codegen-reading"><code class="language-json">{
   "type": "record",
@@ -180,8 +188,8 @@ import 'types.g.dart';
 
 void main() {
   final reading = Reading(
-    // 5 fits int and long: name the branch.
-    value: const Branch('long', 5),
+    // 5 fits int and long: the class names the branch.
+    value: const ReadingValueLong(5),
     class$: 'B',
     raw: Uint8List.fromList([1, 2]),
     labels: {'unit': 'kg'},
@@ -189,16 +197,33 @@ void main() {
   final codec = TypedCodec(Reading.avroType);
   final back = codec.decode(codec.encode(reading));
   print(back);
-  print(back.value.runtimeType);
+  print(switch (back.value) {
+    ReadingValueInt(:final value) =&gt; 'int $value',
+    ReadingValueLong(:final value) =&gt; 'long $value',
+    ReadingValueString(:final value) =&gt; 'string $value',
+  });
 
   // Lists, maps and bytes compare by their elements.
-  print(back == reading.copyWith(value: 5));
-  print(back.hashCode == reading.copyWith(value: 5).hashCode);
+  print(back == reading);
+  print(back.hashCode == reading.hashCode);
 }</code></pre>
-<pre data-example-output="guide/codegen-unions"><code>Reading(value: 5, class$: B, raw: [1, 2], labels: {unit: kg})
-int
+<pre data-example-output="guide/codegen-unions"><code>Reading(value: ReadingValueLong(5), class$: B, raw: [1, 2], labels: {unit: kg})
+long 5
 true
 true</code></pre>
+<div class="callout">
+  <p class="eyebrow">Breaking in 0.3.0</p>
+  <p>
+    Code generated by 0.2.0 held such a union as <code>Object?</code>, with the plain value of
+    the branch. From 0.3.0 the field is the sealed class, and <code>fromAvro</code> expects the
+    <code>Branch</code> that <code>TypedCodec</code> decodes. Regenerate your code with 0.3.0,
+    and change the code that reads or builds those fields: build a branch class, such as
+    <code>ReadingValueLong(5)</code>, where you passed <code>5</code>, and <code>switch</code>
+    over the field where you tested its type. <code>Branch</code> is now a name the generated
+    code uses, so a record or enum named <code>Branch</code> needs a <code>--prefix</code> for its
+    namespace.
+  </p>
+</div>
 
 <h3 id="inline-and-repeated-types">Inline and repeated types</h3>
 <p>
@@ -317,8 +342,8 @@ enum Mood {
     not constructor defaults: they are for schema resolution only.
   </li>
   <li>
-    <strong><code>==</code> and <code>hashCode</code></strong> compare every field; lists, maps,
-    bytes and <code>Object?</code> fields compare by their elements.
+    <strong><code>==</code> and <code>hashCode</code></strong> compare every field; lists, maps
+    and bytes compare by their elements.
   </li>
   <li><strong><code>toString</code></strong> shows the Dart field names and their values.</li>
   <li>
@@ -341,7 +366,8 @@ enum Mood {
   does; a schema that does not resolve throws <code>ResolutionException</code> there. Encoding
   always writes the class's own schema. <code>encodeSingleObject</code> and
   <code>decodeSingleObject</code> are the <a href="single-object.html">single-object
-  encoding</a>, with the fingerprint of the class's schema.
+  encoding</a>, with the fingerprint of the class's schema, and <code>encodeJson</code> and
+  <code>decodeJson</code> the <a href="json.html">JSON encoding</a>.
 </p>
 <pre data-example="guide/codegen-resolution" data-generate="guide/codegen-memo"><code class="language-dart">import 'package:avro/avro.dart';
 
@@ -414,3 +440,46 @@ true</code></pre>
   <code>TypedCodec(Memo.avroType, writer: fileSchema).avro</code>, where
   <code>fileSchema</code> is <code>Schema.parse(reader.header.schemaJson)</code>.
 </p>
+
+<h2>The generator as a library</h2>
+<p>
+  The command is a thin wrapper around <code>package:avro/generate.dart</code>, a library for
+  build steps that hold schema texts rather than files, such as a <code>build_runner</code>
+  builder. <code>generateDart(sources, prefixes:)</code> takes each schema as a
+  <code>SchemaSource(name, text)</code>, where the name, such as the file's path, is what the
+  header and the messages name, and <code>prefixes</code> as a map from namespace to prefix, as
+  <code>--prefix</code> gives them. It reads and writes no files.
+</p>
+<ul>
+  <li>It returns a <code>GeneratedLibrary</code>: <code>source</code>, the Dart library, not yet formatted, and <code>warnings</code>, the warnings the command would print. Format the source with <code>dart format</code> or the <code>DartFormatter</code> of <code>package:dart_style</code>.</li>
+  <li>It throws <code>GenerateException</code> where the command exits with 1; its <code>message</code> starts with the name of the source it concerns.</li>
+  <li>A key of <code>prefixes</code> that is not a namespace, or a value that is not an UpperCamelCase prefix, throws <code>ArgumentError</code>.</li>
+</ul>
+<pre data-example="guide/codegen-library"><code class="language-dart">import 'package:avro/generate.dart';
+
+void main() {
+  const event = SchemaSource('event.avsc', '''
+  {"type": "record", "name": "Event", "namespace": "com.example", "fields": [
+    {"name": "payload", "type": ["string", "long"]}
+  ]}
+  ''');
+
+  final library = generateDart([event], prefixes: {'com.other': 'Other'});
+  print(library.warnings);
+  for (final name in ['final class Event', 'sealed class EventPayload', 'final class EventPayloadLong']) {
+    print('$name: ${library.source.contains(name)}');
+  }
+
+  try {
+    generateDart([
+      const SchemaSource('branch.avsc', '{"type": "record", "name": "Branch", "fields": []}'),
+    ]);
+  } on GenerateException catch (e) {
+    print(e.message);
+  }
+}</code></pre>
+<pre data-example-output="guide/codegen-library"><code>[no record or enum is in the namespace com.other of --prefix]
+final class Event: true
+sealed class EventPayload: true
+final class EventPayloadLong: true
+branch.avsc: the Dart name Branch of "Branch" would clash with Branch of dart:core, dart:typed_data or package:avro; rename one of them, or choose other prefixes</code></pre>

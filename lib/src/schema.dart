@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'codec.dart' show Branch;
 import 'exceptions.dart';
 import 'limits.dart';
 import 'logical.dart';
@@ -42,7 +43,16 @@ sealed class Schema {
       }
     }
     final maxDepth = limits.maxSchemaDepth;
-    if (maxDepth != null) _checkDepth(jsonText, maxDepth);
+    if (maxDepth != null) {
+      checkJsonNesting(
+        jsonText,
+        maxDepth,
+        () => throw LimitExceededException(
+          'the schema is nested deeper than $maxDepth',
+          limit: 'maxSchemaDepth',
+        ),
+      );
+    }
     final Object? decoded;
     try {
       decoded = jsonDecode(jsonText);
@@ -251,6 +261,12 @@ final class UnionSchema extends Schema {
 /// of any other.
 String branchName(Schema s) => s is NamedSchema ? s.fullName : s.type;
 
+/// Whether a value of [branch] of [union] decodes into a [Branch] when branches are decoded:
+/// when it is not `null` and the union has two or more branches that are not.
+bool decodesAsBranch(UnionSchema union, Schema branch) =>
+    branch.type != 'null' &&
+    union.branches.where((b) => b.type != 'null').length > 1;
+
 /// Keys of a schema object that the specification defines; every other key is a prop.
 const _schemaKeys = {
   'type',
@@ -278,8 +294,9 @@ Map<String, Object?> _propsOf(Map<String, Object?> object, Set<String> keys) =>
 final _namePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
 
 /// Counts the nesting of brackets and braces outside strings, before decoding, so that a
-/// deeply nested text cannot exhaust the stack of the JSON decoder.
-void _checkDepth(String text, int maxDepth) {
+/// deeply nested text cannot exhaust the stack of the JSON decoder. Calls [fail] when the
+/// nesting exceeds [maxDepth].
+void checkJsonNesting(String text, int maxDepth, Never Function() fail) {
   var depth = 0;
   var inString = false;
   for (var i = 0; i < text.length; i++) {
@@ -294,12 +311,7 @@ void _checkDepth(String text, int maxDepth) {
       inString = true;
     } else if (c == 0x5b || c == 0x7b) {
       depth++;
-      if (depth > maxDepth) {
-        throw LimitExceededException(
-          'the schema is nested deeper than $maxDepth',
-          limit: 'maxSchemaDepth',
-        );
-      }
+      if (depth > maxDepth) fail();
     } else if (c == 0x5d || c == 0x7d) {
       depth--;
     }
@@ -562,9 +574,10 @@ final class _NoLogicalValue implements Exception {
 }
 
 /// The Dart value of a JSON default of [schema], or [_invalid]. A default of a logical type
-/// is given as its underlying type and becomes the logical type's Dart value.
-Object? defaultValueOf(Schema schema, Object? json) {
-  final raw = _rawDefault(schema, json);
+/// is given as its underlying type and becomes the logical type's Dart value. With
+/// [branches], a value of a union is a [Branch] where [decodesAsBranch] says so.
+Object? defaultValueOf(Schema schema, Object? json, {bool branches = false}) {
+  final raw = _rawDefault(schema, json, branches);
   final logical = logicalOf(schema);
   if (logical == null || raw is _Invalid) return raw;
   try {
@@ -579,7 +592,7 @@ Object? defaultValueOf(Schema schema, Object? json) {
   }
 }
 
-Object? _rawDefault(Schema schema, Object? json) {
+Object? _rawDefault(Schema schema, Object? json, bool branches) {
   Uint8List? bytesOf(Object? j) {
     if (j is! String) return null;
     final out = Uint8List(j.length);
@@ -619,7 +632,7 @@ Object? _rawDefault(Schema schema, Object? json) {
       if (json is! List<Object?>) return _invalid;
       final out = <Object?>[];
       for (final j in json) {
-        final v = defaultValueOf(items, j);
+        final v = defaultValueOf(items, j, branches: branches);
         if (v is _Invalid) return _invalid;
         out.add(v);
       }
@@ -628,7 +641,7 @@ Object? _rawDefault(Schema schema, Object? json) {
       if (json is! Map<String, Object?>) return _invalid;
       final out = <String, Object?>{};
       for (final e in json.entries) {
-        final v = defaultValueOf(values, e.value);
+        final v = defaultValueOf(values, e.value, branches: branches);
         if (v is _Invalid) return _invalid;
         out[e.key] = v;
       }
@@ -639,9 +652,11 @@ Object? _rawDefault(Schema schema, Object? json) {
       for (final f in fields) {
         final Object? v;
         if (json.containsKey(f.name)) {
-          v = defaultValueOf(f.schema, json[f.name]);
+          v = defaultValueOf(f.schema, json[f.name], branches: branches);
         } else if (f.hasDefault) {
-          v = f.defaultValue;
+          v = branches
+              ? defaultValueOf(f.schema, f.json['default'], branches: true)
+              : f.defaultValue;
         } else {
           return _invalid;
         }
@@ -649,10 +664,13 @@ Object? _rawDefault(Schema schema, Object? json) {
         out[f.name] = v;
       }
       return out;
-    case UnionSchema(:final branches):
-      for (final b in branches) {
-        final v = defaultValueOf(b, json);
-        if (v is! _Invalid) return v;
+    case UnionSchema():
+      for (final b in schema.branches) {
+        final v = defaultValueOf(b, json, branches: branches);
+        if (v is _Invalid) continue;
+        return branches && decodesAsBranch(schema, b)
+            ? Branch(branchName(b), v)
+            : v;
       }
       return _invalid;
   }

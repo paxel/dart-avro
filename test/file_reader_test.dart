@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart' show BZip2Encoder, XZEncoder, ZstdEncoder;
 import 'package:avro/avro.dart';
+import 'package:avro/src/snappy.dart';
 import 'package:test/test.dart';
 
 Uint8List hexFile(String path) {
@@ -51,6 +53,14 @@ Uint8List file({
 Uint8List deflate(List<int> data) =>
     Uint8List.fromList(ZLibEncoder(raw: true).convert(data));
 
+/// [data] compressed with Snappy, then its big-endian CRC32, or [crc] instead.
+Uint8List snappy(List<int> data, {int? crc}) {
+  final compressed = snappyCompress(Uint8List.fromList(data));
+  return Uint8List(compressed.length + 4)
+    ..setAll(0, compressed)
+    ..buffer.asByteData().setUint32(compressed.length, crc ?? crc32(data));
+}
+
 void main() {
   final weather = [
     for (final line in File('test/data/apache/weather.json').readAsLinesSync())
@@ -58,15 +68,20 @@ void main() {
   ];
 
   group("Apache Avro's weather files", () {
-    for (final name in ['weather.avro', 'weather-deflate.avro']) {
+    for (final (name, compression) in [
+      ('apache/weather.avro', 'null'),
+      ('apache/weather-deflate.avro', 'deflate'),
+      ('apache/weather-snappy.avro', 'snappy'),
+      ('apache/weather-zstd.avro', 'zstandard'),
+      ('compressions/weather-bzip2.avro', 'bzip2'),
+      ('compressions/weather-xz.avro', 'xz'),
+      ('compressions/weather-zstandard.avro', 'zstandard'),
+    ]) {
       test('$name reads to weather.json', () {
         final reader = AvroFileReader(
-          File('test/data/apache/$name').readAsBytesSync(),
+          File('test/data/$name').readAsBytesSync(),
         );
-        expect(
-          reader.header.compression,
-          name.contains('deflate') ? 'deflate' : 'null',
-        );
+        expect(reader.header.compression, compression);
         expect(Schema.parse(reader.header.schemaJson), isA<RecordSchema>());
         expect(reader.records().toList(), weather);
       });
@@ -155,14 +170,13 @@ void main() {
       'null',
     );
     expect(
-      () => AvroFileReader(
-        file(schema: '"int"', compression: 'snappy', blocks: []),
-      ),
+      () =>
+          AvroFileReader(file(schema: '"int"', compression: 'lz4', blocks: [])),
       throwsA(
         isA<UnsupportedCompressionException>().having(
           (e) => e.compression,
           'compression',
-          'snappy',
+          'lz4',
         ),
       ),
     );
@@ -286,9 +300,146 @@ void main() {
         throwsA(isA<DecodeException>()),
       );
     });
+
+    group('a snappy block', () {
+      DecodeException? error(List<int> block) {
+        try {
+          AvroFileReader(
+            file(schema: '"int"', compression: 'snappy', blocks: [(1, block)]),
+          ).records().toList();
+        } on DecodeException catch (e) {
+          return e;
+        }
+        return null;
+      }
+
+      test('whose CRC32 does not match', () {
+        final block = snappy([2], crc: crc32([2]) ^ 1);
+        final e = error(block);
+        expect(e?.message, contains('CRC32'));
+        // The CRC32 is the last 4 bytes of the block, before the 16 of the sync marker.
+        final bytes = file(
+          schema: '"int"',
+          compression: 'snappy',
+          blocks: [(1, block)],
+        );
+        expect(e?.offset, bytes.length - 16 - 4);
+      });
+
+      test('too short for its CRC32', () {
+        expect(error([1, 0, 2])?.message, contains('too few for its CRC32'));
+      });
+
+      test('that is not Snappy', () {
+        expect(
+          error([5, 0, 2, 1, 2, 0, 0, 0, 0])?.message,
+          contains('not valid Snappy'),
+        );
+      });
+    });
+
+    for (final compression in ['bzip2', 'xz', 'zstandard']) {
+      test('a $compression block that is damaged or cut off', () {
+        final raw = AvroCodec(writer: Schema.parse('"string"'))
+            .encode('a string that the block holds, twice: ' * 2);
+        final block = switch (compression) {
+          'bzip2' => BZip2Encoder().encodeBytes(raw),
+          'xz' => XZEncoder().encodeBytes(raw),
+          _ => ZstdEncoder().encodeBytes(raw, checksum: true),
+        };
+        expect(
+          AvroFileReader(
+            file(
+              schema: '"string"',
+              compression: compression,
+              blocks: [(1, block)],
+            ),
+          ).records().single,
+          startsWith('a string'),
+        );
+        final damaged = Uint8List.fromList(block)..[block.length ~/ 2] ^= 0x55;
+        final cut = Uint8List.sublistView(block, 0, block.length - 5);
+        for (final data in [damaged, cut, Uint8List(0), Uint8List(7)]) {
+          expect(
+            () => AvroFileReader(
+              file(
+                schema: '"string"',
+                compression: compression,
+                blocks: [(1, data)],
+              ),
+            ).records().toList(),
+            throwsA(isA<DecodeException>()),
+            reason: '$compression ${data.length} bytes',
+          );
+        }
+      });
+    }
+
+    test('a zstandard frame whose window is larger than archive allows', () {
+      // The magic, a descriptor without content size, a window of 256 MiB and an empty last
+      // raw block.
+      final frame = [0x28, 0xb5, 0x2f, 0xfd, 0x00, 0x90, 0x01, 0x00, 0x00];
+      expect(
+        () => AvroFileReader(
+          file(
+            schema: '"null"',
+            compression: 'zstandard',
+            blocks: [(1, frame)],
+          ),
+          limits: AvroLimits.none,
+        ).records().toList(),
+        throwsA(
+          isA<DecodeException>().having(
+            (e) => e.message,
+            'message',
+            contains('more memory than the zstandard decoder allows'),
+          ),
+        ),
+      );
+    });
   });
 
   group('limits', () {
+    for (final (compression, name) in [
+      ('bzip2', 'bomb-bzip2'),
+      ('xz', 'bomb-xz'),
+      ('xz', 'bomb-xz-x86'),
+      ('xz', 'bomb-xz-sizes'),
+      ('zstandard', 'bomb-zstandard'),
+    ]) {
+      test('$name.bin stops at the limit', () {
+        final bomb = File('test/data/compressions/$name.bin').readAsBytesSync();
+        final bytes = file(
+          schema: '"null"',
+          compression: compression,
+          blocks: [(1, bomb)],
+        );
+        for (final (limits, limit) in [
+          (const AvroLimits(maxBlockBytes: 1024 * 1024), 'maxBlockBytes'),
+          (
+            const AvroLimits(maxBlockBytes: null, maxTotalBytes: 1024 * 1024),
+            'maxTotalBytes',
+          ),
+        ]) {
+          final before = ProcessInfo.maxRss;
+          final watch = Stopwatch()..start();
+          expect(
+            () => AvroFileReader(bytes, limits: limits).records().toList(),
+            throwsA(
+              isA<LimitExceededException>().having(
+                (e) => e.limit,
+                'limit',
+                limit,
+              ),
+            ),
+          );
+          // Decoding it all would take up to 200 MiB and seconds.
+          expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+          expect(ProcessInfo.maxRss - before, lessThan(64 * 1024 * 1024));
+        }
+      });
+    }
+
     test('a deflate bomb stops at the block limit', () {
       final bomb = deflate(Uint8List(16 * 1024 * 1024));
       expect(bomb.length, lessThan(64 * 1024));
@@ -308,6 +459,85 @@ void main() {
             (e) => e.limit,
             'limit',
             'maxBlockBytes',
+          ),
+        ),
+      );
+    });
+
+    test('a snappy block declaring more than the block limit throws before allocating', () {
+      // 4 GiB declared in 5 bytes, then a literal of 1 byte and a CRC32.
+      final bytes = file(
+        schema: '"null"',
+        compression: 'snappy',
+        blocks: [
+          (1, [0xff, 0xff, 0xff, 0xff, 0x0f, 0, 0, 0, 0, 0, 0]),
+        ],
+      );
+      for (final (limits, limit) in [
+        (const AvroLimits(), 'maxBlockBytes'),
+        (const AvroLimits(maxBlockBytes: null), 'maxTotalBytes'),
+      ]) {
+        expect(
+          () => AvroFileReader(bytes, limits: limits).records().toList(),
+          throwsA(
+            isA<LimitExceededException>().having(
+              (e) => e.limit,
+              'limit',
+              limit,
+            ),
+          ),
+        );
+      }
+      // Without limits, the input cannot hold what it declares.
+      expect(
+        () => AvroFileReader(bytes, limits: AvroLimits.none).records().toList(),
+        throwsA(isA<DecodeException>()),
+      );
+    });
+
+    test('snappy blocks count towards the total limit', () {
+      final block = snappy(Uint8List(1000));
+      final bytes = file(
+        schema: '{"type": "fixed", "name": "F", "size": 1000}',
+        compression: 'snappy',
+        blocks: [(1, block), (1, block), (1, block)],
+      );
+      final it = AvroFileReader(
+        bytes,
+        limits: const AvroLimits(maxTotalBytes: 2500),
+      ).records().iterator;
+      expect(it.moveNext() && it.moveNext(), isTrue);
+      expect(
+        it.moveNext,
+        throwsA(
+          isA<LimitExceededException>().having(
+            (e) => e.limit,
+            'limit',
+            'maxTotalBytes',
+          ),
+        ),
+      );
+    });
+
+    test('zstandard blocks count towards the total limit', () {
+      final block = ZstdEncoder().encodeBytes(Uint8List(1000), checksum: true);
+      final bytes = file(
+        schema: '{"type": "fixed", "name": "F", "size": 1000}',
+        compression: 'zstandard',
+        blocks: [(1, block), (1, block), (1, block)],
+      );
+      final it = AvroFileReader(
+        bytes,
+        limits: const AvroLimits(maxTotalBytes: 2500),
+      ).records().iterator;
+      expect(it.moveNext() && it.moveNext(), isTrue);
+      expect(
+        it.moveNext,
+        throwsA(
+          isA<LimitExceededException>().having(
+            (e) => e.limit,
+            'limit',
+            'maxTotalBytes',
           ),
         ),
       );

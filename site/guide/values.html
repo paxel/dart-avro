@@ -1,4 +1,4 @@
-<!-- page: title="Values and unions" track="guide" order=2 summary="The plain Dart values encode accepts and decode returns, why records are strict, how a union branch is inferred, and when to name it with Branch." -->
+<!-- page: title="Values and unions" track="guide" order=2 summary="The plain Dart values encode accepts and decode returns, why records are strict, how a union branch is inferred, when to name it with Branch, and decodeBranches to decode unions into Branch." -->
 <p class="lede">
   An <code>AvroCodec</code> works with plain Dart values: maps, lists, strings, numbers and a few
   classes of the package for logical types. This page shows what <code>encode</code> accepts, how
@@ -213,12 +213,12 @@ RED</code></pre>
 
 <h2>What decode returns</h2>
 <p>
-  <code>decode</code> returns plain values only, never a <code>Branch</code>. Records come back as
-  maps with one entry per field of the reader schema, in its field order; lists and maps are new,
-  growable objects that you may change. Two branches that decode to the same kind of value, such
-  as two records with the same fields, cannot be told apart afterwards. If that matters, give the
-  records different field names, or wrap the value in a record with an enum that says which it
-  is.
+  <code>decode</code> returns plain values, and a <code>Branch</code> only for a codec made with
+  <code>decodeBranches: true</code>. Records come back as maps with one entry per field of the
+  reader schema, in its field order; lists and maps are new, growable objects that you may change.
+  Without <code>decodeBranches</code>, two branches that decode to the same kind of value, such as
+  two records with the same fields, cannot be told apart afterwards; see
+  <a href="#decoding-into-branch">Decoding into <code>Branch</code></a> below.
 </p>
 <p>
   <code>decode</code> reads exactly one datum: bytes left over after it throw
@@ -251,3 +251,56 @@ void main() {
 2: 1 bytes left over after the datum
 0: the union has no branch 2
 1: needs 1 bytes, but only 0 are left</code></pre>
+
+<h2>Decoding into <code>Branch</code></h2>
+<p>
+  <code>AvroCodec(writer:, decodeBranches: true)</code> decodes the value of every union with two
+  or more non-null branches as a <code>Branch</code> of the branch it was in, so you can tell two
+  records with the same fields apart, and a decoded value encodes back to the same bytes, branch
+  for branch. <code>null</code>, and the value of a union of <code>null</code> and one other
+  type, stay plain. The option is off by default.
+</p>
+<p>
+  It applies wherever the codec decodes: <code>decode</code>, <code>decodeSingleObject</code>,
+  <code>decodeJson</code>, the records of a container file read with the codec, and the reader
+  defaults that <a href="resolution.html#unions">schema resolution</a> fills in. With a reader
+  schema, the <code>Branch</code> names the reader's branch. <code>TypedCodec</code> always
+  decodes this way, which is how generated code knows the branch of a union.
+</p>
+<pre data-example="guide/values-decode-branches"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final schema = Schema.parse('''
+  {"type": "record", "name": "Shape", "namespace": "com.example", "fields": [
+    {"name": "kind", "type": [
+      {"type": "record", "name": "Square", "fields": [{"name": "side", "type": "double"}]},
+      {"type": "record", "name": "Circle", "fields": [{"name": "side", "type": "double"}]}
+    ]},
+    {"name": "label", "type": ["null", "string"]},
+    {"name": "size", "type": ["null", "int", "long"]}
+  ]}
+  ''');
+  final value = {
+    'kind': const Branch('com.example.Circle', {'side': 2.0}),
+    'label': 'disc',
+    'size': const Branch('long', 7),
+  };
+  final bytes = AvroCodec(writer: schema).encode(value);
+
+  print(AvroCodec(writer: schema).decode(bytes));
+  final branches = AvroCodec(writer: schema, decodeBranches: true);
+  final back = branches.decode(bytes);
+  print(back);
+
+  // The value encodes back to the same bytes, branch for branch.
+  print(branches.encode(back).toString() == bytes.toString());
+  print(branches.decode(AvroCodec(writer: schema).encode({...value, 'size': null})));
+}</code></pre>
+<pre data-example-output="guide/values-decode-branches"><code>{kind: {side: 2.0}, label: disc, size: 7}
+{kind: Branch(com.example.Circle, {side: 2.0}), label: disc, size: Branch(long, 7)}
+true
+{kind: Branch(com.example.Circle, {side: 2.0}), label: disc, size: null}</code></pre>
+<p>
+  <code>Branch</code> compares its name and its value with <code>==</code>, so two
+  <code>Branch</code>es of equal maps are not equal unless the maps are the same object.
+</p>

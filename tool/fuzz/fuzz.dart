@@ -1,4 +1,4 @@
-// Mutation fuzzing of the decoder and the container file reader (avro-1010).
+// Mutation fuzzing of the decoder and the container file readers (avro-1010).
 //
 //   dart run tool/fuzz/fuzz.dart [seconds] [seed]
 //
@@ -15,7 +15,7 @@ import 'package:crypto/crypto.dart';
 
 import 'targets.dart';
 
-void main(List<String> args) {
+Future<void> main(List<String> args) async {
   final seconds = args.isNotEmpty ? int.parse(args[0]) : 60;
   final seed = args.length > 1
       ? int.parse(args[1])
@@ -29,7 +29,7 @@ void main(List<String> args) {
   while (DateTime.now().isBefore(end)) {
     final input = mutate(seeds[random.nextInt(seeds.length)], random);
     final watch = Stopwatch()..start();
-    final failure = fuzzOne(input, codecs);
+    final failure = fuzzOne(input, codecs) ?? await fuzzStream(input);
     if (failure != null) {
       stderr.writeln(failure);
       keepCrash(input);

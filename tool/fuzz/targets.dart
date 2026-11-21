@@ -1,14 +1,17 @@
-// The fuzz targets: the two entry points that take untrusted bytes, AvroCodec.decode (with
-// single-object encoding) and AvroFileReader with its records. Any input must either decode
-// or throw an AvroException.
+// The fuzz targets: the entry points that take untrusted input, AvroCodec.decode (with
+// single-object encoding), AvroCodec.decodeJson, AvroFileReader with its records and
+// AvroFileStreamReader with its records. Any input must either decode or throw an
+// AvroException.
 
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:avro/avro.dart';
 
-/// Limits that keep one input cheap; a deflate bomb must stop at the block limit.
+/// Limits that keep one input cheap; a bomb in any compression must stop at the block limit.
 const fuzzLimits = AvroLimits(
   maxBlockBytes: 1024 * 1024,
   maxTotalBytes: 4 * 1024 * 1024,
@@ -66,10 +69,12 @@ FuzzFailure? fuzzOne(Uint8List input, List<AvroCodec> codecs) {
     return null;
   }
 
+  final text = utf8.decode(input, allowMalformed: true);
   for (final codec in codecs) {
     final failure =
         run('decode ${codec.writer.type}', () => codec.decode(input)) ??
-        run('decodeSingleObject', () => codec.decodeSingleObject(input));
+        run('decodeSingleObject', () => codec.decodeSingleObject(input)) ??
+        run('decodeJson ${codec.writer.type}', () => codec.decodeJson(text));
     if (failure != null) return failure;
   }
   return run(
@@ -84,6 +89,33 @@ FuzzFailure? fuzzOne(Uint8List input, List<AvroCodec> codecs) {
         final text = String.fromCharCodes(input);
         Schema.parse(text, limits: fuzzLimits);
       });
+}
+
+/// Runs [AvroFileStreamReader] on [input], in chunks whose sizes come from [input] itself,
+/// so that a kept input fails again the same way; returns the failure, or null.
+Future<FuzzFailure?> fuzzStream(Uint8List input) async {
+  Stream<List<int>> chunks() async* {
+    var at = 0;
+    while (at < input.length) {
+      final size = 1 + input[at] % 61;
+      final end = min(at + size, input.length);
+      yield Uint8List.sublistView(input, at, end);
+      at = end;
+    }
+  }
+
+  try {
+    final reader = await AvroFileStreamReader.open(
+      chunks(),
+      limits: fuzzLimits,
+    );
+    await reader.records().drain<void>().timeout(const Duration(seconds: 5));
+  } on AvroException {
+    // Rejected as it should be.
+  } on Object catch (e, s) {
+    return FuzzFailure('AvroFileStreamReader', input, e, s);
+  }
+  return null;
 }
 
 /// Valid inputs to mutate.
@@ -115,6 +147,15 @@ List<Uint8List> fuzzSeeds(List<AvroCodec> codecs) {
       'v': 2,
       'next': {'v': 3, 'next': null},
     });
+  final snappy = AvroFileWriter(list, compression: 'snappy')
+    ..add({'v': 1, 'next': null})
+    ..add({
+      'v': 2,
+      'next': {
+        'v': 2,
+        'next': {'v': 2, 'next': null},
+      },
+    });
   return [
     message,
     Uint8List.sublistView(message, 10),
@@ -122,12 +163,41 @@ List<Uint8List> fuzzSeeds(List<AvroCodec> codecs) {
     File('test/data/apache/weather.avro').readAsBytesSync(),
     File('test/data/apache/weather-deflate.avro').readAsBytesSync(),
     deflated.close(),
+    File('test/data/apache/weather-snappy.avro').readAsBytesSync(),
+    snappy.close(),
+    File('test/data/apache/weather-zstd.avro').readAsBytesSync(),
+    for (final compression in ['bzip2', 'xz', 'zstandard']) ...[
+      File('test/data/compressions/weather-$compression.avro')
+          .readAsBytesSync(),
+      (AvroFileWriter(list, compression: compression)
+            ..add({'v': 1, 'next': null})
+            ..add({
+              'v': 2,
+              'next': {'v': 3, 'next': null},
+            }))
+          .close(),
+    ],
     logical.encode(logicalValue),
     logical.encodeSingleObject(logicalValue),
     codecs[3].encode([
       {'a': null, 'b': 'x', 'c': Uint8List(3)},
     ]),
     Uint8List.fromList(File('test/data/apache/interop.avsc').readAsBytesSync()),
+    for (final json in [
+      logical.encodeJson(logicalValue),
+      list.encodeJson({
+        'v': 1,
+        'next': {'v': -2, 'next': null},
+      }),
+      codecs[3].encodeJson([
+        {
+          'a': null,
+          'b': 'x',
+          'c': Uint8List.fromList([0, 255]),
+        },
+      ]),
+    ])
+      Uint8List.fromList(utf8.encode(json)),
   ];
 }
 

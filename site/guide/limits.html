@@ -1,6 +1,6 @@
-<!-- page: title="Untrusted input and limits" track="guide" order=7 summary="Decode bytes from untrusted senders safely: the AvroLimits fields and their defaults, AvroLimits.none, the checks that are always on, deflate bombs, maxValueDepth and maxZeroSizeItems." -->
+<!-- page: title="Untrusted input and limits" track="guide" order=10 summary="Decode bytes from untrusted senders safely: the AvroLimits fields and their defaults, AvroLimits.none, the checks that are always on, compression bombs, maxBlockBytes in the stream reader, maxValueDepth for values and JSON, and maxZeroSizeItems." -->
 <p class="lede">
-  Avro data declares lengths and counts before their content, and a deflated block can expand a
+  Avro data declares lengths and counts before their content, and a compressed block can expand a
   thousandfold. Bytes from an untrusted sender can use both to make a reader allocate far more
   than it was sent. The package bounds that by default.
 </p>
@@ -18,16 +18,17 @@
   <tbody>
     <tr><td><code>maxSchemaBytes</code></td>  <td>1 MiB</td>        <td>The JSON text of one schema, in UTF-8 bytes</td>              <td><code>Schema.parse</code></td></tr>
     <tr><td><code>maxSchemaDepth</code></td>  <td>64</td>           <td>The nesting of arrays and objects in a schema's JSON text</td><td><code>Schema.parse</code></td></tr>
-    <tr><td><code>maxValueDepth</code></td>   <td>1024</td>         <td>The nesting depth of one value</td>                           <td><code>AvroCodec</code></td></tr>
+    <tr><td><code>maxValueDepth</code></td>   <td>1024</td>         <td>The nesting depth of one value, and of its JSON text</td>      <td><code>AvroCodec</code></td></tr>
     <tr><td><code>maxZeroSizeItems</code></td><td>1,048,576</td>    <td>The items of one array whose items take zero bytes</td>       <td><code>AvroCodec</code></td></tr>
-    <tr><td><code>maxBlockBytes</code></td>   <td>64 MiB</td>       <td>One block of a container file, decompressed</td>              <td><code>AvroFileReader</code></td></tr>
-    <tr><td><code>maxTotalBytes</code></td>   <td>1 GiB</td>        <td>All blocks of a container file together, decompressed</td>    <td><code>AvroFileReader</code></td></tr>
+    <tr><td><code>maxBlockBytes</code></td>   <td>64 MiB</td>       <td>One block of a container file, decompressed; in the stream reader also compressed, and the header</td><td><code>AvroFileReader</code>, <code>AvroFileStreamReader</code></td></tr>
+    <tr><td><code>maxTotalBytes</code></td>   <td>1 GiB</td>        <td>All blocks of a container file together, decompressed</td>    <td><code>AvroFileReader</code>, <code>AvroFileStreamReader</code></td></tr>
   </tbody>
 </table>
 </div>
 <p>
-  <code>Schema.parse</code>, <code>AvroCodec</code> and <code>AvroFileReader</code> each take a
-  <code>limits:</code> argument, and each checks the fields in its row. The reader also uses its
+  <code>Schema.parse</code>, <code>AvroCodec</code>, <code>AvroFileReader</code> and
+  <code>AvroFileStreamReader.open</code> each take a <code>limits:</code> argument, and each
+  checks the fields in its row. The reader also uses its
   limits to parse the file's schema, and for the codec of <code>records()</code> without an
   argument. A codec you pass to <code>records(codec)</code> keeps its own limits for the values.
   Input over a limit throws <code>LimitExceededException</code>, whose <code>limit</code> is the
@@ -95,34 +96,84 @@ DecodeException at byte 0: declares 1000 items, more than the 3 bytes left can h
 DecodeException at byte 0: a length cannot be negative: -1
 DecodeException at byte 0: a string is not well-formed UTF-8: Invalid UTF-8 byte</code></pre>
 
-<h2>Deflate bombs</h2>
+<h2>Compression bombs</h2>
 <p>
-  A block compressed with <code>deflate</code> can be tiny and decompress to gigabytes. The reader
-  inflates a block in chunks and stops as soon as the output passes <code>maxBlockBytes</code>,
-  or, counted over the whole file, <code>maxTotalBytes</code>. A bomb is never inflated in
-  full.
+  A compressed block can be tiny and decompress to gigabytes. Whatever the
+  <a href="compressions.html">compression</a>, the reader stops decompressing a block as soon as
+  the output passes <code>maxBlockBytes</code>, or, counted over the whole file,
+  <code>maxTotalBytes</code>. A bomb is never decompressed in full. A <code>snappy</code> block
+  declares its length first, so it fails on that before anything is decompressed.
 </p>
 <pre data-example="guide/limits-bomb"><code class="language-dart">import 'dart:typed_data';
 
 import 'package:avro/avro.dart';
 
 void main() {
-  // 5 MiB of zeros, deflated to a few kilobytes.
-  final writer = AvroFileWriter(AvroCodec(writer: Schema.parse('"bytes"')), compression: 'deflate');
-  writer.add(Uint8List(5 * 1024 * 1024));
-  final file = writer.close();
-
+  final codec = AvroCodec(writer: Schema.parse('"bytes"'));
   const strict = AvroLimits(maxBlockBytes: 1024 * 1024);
+  for (final compression in ['deflate', 'snappy', 'bzip2', 'xz', 'zstandard']) {
+    // 5 MiB of zeros in one block.
+    final writer = AvroFileWriter(codec, compression: compression);
+    writer.add(Uint8List(5 * 1024 * 1024));
+    final file = writer.close();
+    try {
+      AvroFileReader(file, limits: strict).records().toList();
+    } on LimitExceededException catch (e) {
+      print('$compression: ${e.limit}: ${e.message}');
+    }
+    if (compression == 'deflate') {
+      print(AvroFileReader(file).records().length); // within the default 64 MiB
+    }
+  }
+}</code></pre>
+<pre data-example-output="guide/limits-bomb"><code>deflate: maxBlockBytes: a block inflates beyond 1048576 bytes
+1
+snappy: maxBlockBytes: a block has 5242884 bytes, the limit is 1048576
+bzip2: maxBlockBytes: a block decompresses beyond 1048576 bytes
+xz: maxBlockBytes: a block decompresses beyond 1048576 bytes
+zstandard: maxBlockBytes: a block decompresses beyond 1048576 bytes</code></pre>
+<p>
+  The <code>xz</code> block here is stored, as this package writes <code>xz</code>; an
+  <code>xz</code> bomb from another writer stops the same way.
+</p>
+
+<h2 id="streamed-files">Streamed files</h2>
+<p>
+  <code>AvroFileStreamReader</code> buffers a block's compressed bytes before it decompresses
+  them, and the header before it returns from <code>open</code>. <code>maxBlockBytes</code> bounds
+  both: a block that declares more compressed bytes fails before they are read, and a header that
+  needs more bytes fails in <code>open</code>. <code>AvroFileReader</code> has the whole file in
+  memory already, so it checks neither.
+</p>
+<pre data-example="guide/limits-stream"><code class="language-dart">import 'dart:typed_data';
+
+import 'package:avro/avro.dart';
+
+Future&lt;void&gt; main() async {
+  final codec = AvroCodec(writer: Schema.parse('"bytes"'));
+  const strict = AvroLimits(maxBlockBytes: 1024 * 1024);
+
+  // A block of 2 MiB: refused before its bytes are buffered.
+  final big = (AvroFileWriter(codec)..add(Uint8List(2 * 1024 * 1024))).close();
+  final reader = await AvroFileStreamReader.open(Stream.value(big), limits: strict);
   try {
-    AvroFileReader(file, limits: strict).records().toList();
+    await reader.records().toList();
   } on LimitExceededException catch (e) {
     print('${e.limit}: ${e.message}');
   }
 
-  print(AvroFileReader(file).records().length); // within the default 64 MiB
+  // A header of more than 1 MiB: refused by open.
+  final header = AvroFileWriter(codec, metadata: {'app.blob': Uint8List(2 * 1024 * 1024)}).close();
+  try {
+    await AvroFileStreamReader.open(Stream.value(header), limits: strict);
+  } on LimitExceededException catch (e) {
+    print('${e.limit}: ${e.message}');
+  }
+  print(AvroFileReader(header, limits: strict).header.metadata.length);
 }</code></pre>
-<pre data-example-output="guide/limits-bomb"><code>maxBlockBytes: a block inflates beyond 1048576 bytes
-1</code></pre>
+<pre data-example-output="guide/limits-stream"><code>maxBlockBytes: a block declares 2097156 compressed bytes, the limit is 1048576
+maxBlockBytes: the header needs more than 1048576 bytes
+3</code></pre>
 
 <h2>Deep values: <code>maxValueDepth</code></h2>
 <p>
@@ -168,7 +219,9 @@ maxValueDepth: the value at $.next.next.next.next.next.next is nested deeper tha
 maxValueDepth: the value at $.next.next.next.next.next.next is nested deeper than 10</code></pre>
 <p>
   <code>encode</code> checks the same depth, so a codec does not write what it would refuse to
-  read; there too, the failure is a <code>LimitExceededException</code>.
+  read; there too, the failure is a <code>LimitExceededException</code>. <code>decodeJson</code>
+  also checks the nesting of the JSON text before it parses it: JSON nested deeper than
+  <code>maxValueDepth</code> throws <code>LimitExceededException</code> without being parsed.
 </p>
 
 <h2>Empty items: <code>maxZeroSizeItems</code></h2>
@@ -208,7 +261,7 @@ maxZeroSizeItems: an array declares 2000000 items of zero bytes at $, the limit 
 
 <h2>A checklist for untrusted bytes</h2>
 <ul>
-  <li>Declare one <code>AvroLimits</code> constant for your application and pass it everywhere: to <code>Schema.parse</code>, to every <code>AvroCodec</code> and to every <code>AvroFileReader</code>.</li>
+  <li>Declare one <code>AvroLimits</code> constant for your application and pass it everywhere: to <code>Schema.parse</code>, to every <code>AvroCodec</code>, to every <code>AvroFileReader</code> and to every <code>AvroFileStreamReader.open</code>.</li>
   <li>Read a file's header first, and decode with a codec of a schema you know; see <a href="container-files.html#decode-with-your-own-codec">Container files</a>.</li>
   <li>Choose a single-object codec by fingerprint from the codecs you made, never from a schema the sender supplied; see <a href="single-object.html">Single-object encoding</a>.</li>
   <li>Catch <code>AvroException</code> at the boundary where the bytes come in; see <a href="errors.html">Errors</a>.</li>

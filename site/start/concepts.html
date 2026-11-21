@@ -1,4 +1,4 @@
-<!-- page: title="Concepts" track="start" order=2 summary="The model behind avro: writer and reader schema, the codec, generic values, unions and Branch, logical types, container files, single-object encoding, fingerprints and limits." -->
+<!-- page: title="Concepts" track="start" order=2 summary="The model behind avro: writer and reader schema, the codec and its binary and JSON encodings, generic values, unions and Branch, logical types, container files, their compressions and streams, single-object encoding, fingerprints and limits." -->
 <p class="lede">
   The ideas behind the calls of <a href="getting-started.html">Getting started</a>, one section
   each. The terms are defined in the <a href="glossary.html">Glossary</a>.
@@ -50,10 +50,14 @@ void main() {
     <code>decode(bytes)</code> reads one value of the writer schema and returns it in the shape of
     the reader schema, as an <code>Object?</code>. Bytes left over after the value are an error.
   </li>
+  <li>
+    <code>encodeJson(value)</code> and <code>decodeJson(text)</code> do the same in Avro's
+    <a href="../guide/json.html">JSON encoding</a>.
+  </li>
 </ul>
 <p>
   In this package, "codec" means this object only. What the Avro specification calls a file's
-  codec, <code>null</code> or <code>deflate</code>, is called
+  codec, such as <code>deflate</code> or <code>zstandard</code>, is called
   <a href="glossary.html#compression">compression</a> here.
 </p>
 
@@ -117,8 +121,10 @@ void main() {
 <pre data-example-output="start/branch"><code>EncodeException at $: more than one branch fits; wrap the value in a Branch of one of int, long
 1</code></pre>
 <p>
-  <code>decode</code> returns the plain value, never a <code>Branch</code>. A union of two records
-  with the same fields therefore cannot be told apart after decoding.
+  <code>decode</code> returns the plain value, and a <code>Branch</code> only for a codec made with
+  <code>decodeBranches: true</code>; without it, a union of two records with the same fields
+  cannot be told apart after decoding. Generated code always decodes with it, so a union field
+  of a generated class is a sealed class that knows its branch.
 </p>
 
 <h2>Logical types</h2>
@@ -227,9 +233,14 @@ void main() {
 }</code></pre>
 <pre data-example-output="start/file-codec"><code>{name: Ada, email: null}</code></pre>
 <p>
-  The compressions are <code>null</code> and <code>deflate</code>. A file compressed in any other
+  The <a href="../guide/compressions.html">compressions</a> are <code>null</code>,
+  <code>deflate</code>, <code>snappy</code>, <code>bzip2</code>, <code>xz</code> and
+  <code>zstandard</code>, all six that the specification names. A file compressed in any other
   way throws <code>UnsupportedCompressionException</code> when the reader is made. The whole file
   is held in memory while it is read; of its decompressed records, only one block at a time.
+  <code>AvroFileStreamReader</code> and <code>AvroFileStreamWriter</code> read a file from a
+  <code>Stream</code> and write one to a <code>StreamSink</code> instead, with one block in
+  memory at a time; see <a href="../guide/streams.html">Streamed container files</a>.
 </p>
 
 <h2>Single-object encoding</h2>
@@ -307,7 +318,7 @@ void main() {
     <tr><th>Field</th><th>Default</th><th>Bounds</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>maxBlockBytes</code></td><td>64 MiB</td><td>One block of a container file after decompression</td></tr>
+    <tr><td><code>maxBlockBytes</code></td><td>64 MiB</td><td>One block of a container file after decompression; in the stream reader also before, and the header</td></tr>
     <tr><td><code>maxTotalBytes</code></td><td>1 GiB</td><td>All blocks of a container file together after decompression</td></tr>
     <tr><td><code>maxSchemaBytes</code></td><td>1 MiB</td><td>The JSON text of one schema, in UTF-8 bytes</td></tr>
     <tr><td><code>maxSchemaDepth</code></td><td>64</td><td>The nesting depth of a schema's JSON text</td></tr>
@@ -316,8 +327,8 @@ void main() {
   </tbody>
 </table>
 <p>
-  <code>Schema.parse</code>, <code>AvroCodec</code> and <code>AvroFileReader</code> each take a
-  <code>limits:</code> argument. A field set to <code>null</code> means no limit;
+  <code>Schema.parse</code>, <code>AvroCodec</code>, <code>AvroFileReader</code> and
+  <code>AvroFileStreamReader.open</code> each take a <code>limits:</code> argument. A field set to <code>null</code> means no limit;
   <code>AvroLimits.none</code> turns them all off. Input over a limit throws
   <code>LimitExceededException</code>, whose <code>limit</code> names the field.
 </p>

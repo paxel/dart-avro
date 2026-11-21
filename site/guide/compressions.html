@@ -1,0 +1,115 @@
+<!-- page: title="Compressions" track="guide" order=7 summary="The six compressions of container files, all in pure Dart: null, deflate, snappy, bzip2, xz and zstandard; which to choose, that xz is written stored, zstandard with a checksum and snappy with its CRC32, the limits that stop decompression, and UnsupportedCompressionException." -->
+<p class="lede">
+  The blocks of a <a href="container-files.html">container file</a> are compressed one by one,
+  with the <a href="../start/glossary.html#compression">compression</a> named in the file's
+  <code>avro.codec</code>. The package reads and writes all six that the Avro specification
+  names, in pure Dart, so a file from Java, Python, Spark or Kafka is readable whatever it was
+  compressed with.
+</p>
+
+<h2>The six compressions</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Name</th>               <th>Read</th><th>Write</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>null</code></td>     <td>yes</td> <td>yes</td>  <td>No compression; the default of the writers</td></tr>
+    <tr><td><code>deflate</code></td>  <td>yes</td> <td>yes</td>  <td>Raw DEFLATE, as the specification says, through <code>dart:io</code></td></tr>
+    <tr><td><code>snappy</code></td>   <td>yes</td> <td>yes</td>  <td>Snappy, implemented in this package, with the big-endian CRC32 of the uncompressed block after it, checked on reading</td></tr>
+    <tr><td><code>bzip2</code></td>    <td>yes</td> <td>yes</td>  <td>Through the package <code>archive</code></td></tr>
+    <tr><td><code>xz</code></td>       <td>yes</td> <td>yes</td>  <td>Through <code>archive</code>; written stored, without being compressed</td></tr>
+    <tr><td><code>zstandard</code></td><td>yes</td> <td>yes</td>  <td>Through <code>archive</code>; written with the frame's checksum</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  Pass the name as <code>compression:</code> to <code>AvroFileWriter</code> or
+  <code>AvroFileStreamWriter</code>; the readers take it from the file and show it as
+  <code>header.compression</code>. Every block of a file uses the same compression, and the
+  records read back the same whichever it is:
+</p>
+<pre data-example="guide/compressions-all"><code class="language-dart">import 'dart:typed_data';
+
+import 'package:avro/avro.dart';
+
+void main() {
+  final codec = AvroCodec(writer: Schema.parse('''
+  {"type": "record", "name": "Line", "fields": [{"name": "text", "type": "string"}]}
+  '''));
+  final records = [
+    for (var i = 0; i &lt; 1000; i++) {'text': 'line $i of a repetitive log'},
+  ];
+  final sync = Uint8List(16);
+
+  Uint8List write(String compression) {
+    final writer = AvroFileWriter(codec, compression: compression, syncMarker: sync);
+    records.forEach(writer.add);
+    return writer.close();
+  }
+
+  final plain = write('null');
+  for (final compression in ['null', 'deflate', 'snappy', 'bzip2', 'xz', 'zstandard']) {
+    final file = write(compression);
+    final reader = AvroFileReader(file);
+    final back = reader.records().toList();
+    final smaller = file.length &lt; plain.length ? 'smaller' : 'not smaller';
+    print('${reader.header.compression}: ${back.length} records, $smaller than null');
+  }
+
+  try {
+    AvroFileWriter(codec, compression: 'lz4');
+  } on UnsupportedCompressionException catch (e) {
+    print(e);
+  }
+}</code></pre>
+<pre data-example-output="guide/compressions-all"><code>null: 1000 records, not smaller than null
+deflate: 1000 records, smaller than null
+snappy: 1000 records, smaller than null
+bzip2: 1000 records, smaller than null
+xz: 1000 records, not smaller than null
+zstandard: 1000 records, smaller than null
+UnsupportedCompressionException: blocks cannot be compressed with "lz4"; only null, deflate, snappy, bzip2, xz and zstandard</code></pre>
+
+<h2>Which to choose</h2>
+<ul>
+  <li><strong><code>deflate</code></strong> is the one the specification requires every implementation to read, and a safe choice when the file leaves your system.</li>
+  <li><strong><code>snappy</code></strong>, <strong><code>bzip2</code></strong> and <strong><code>zstandard</code></strong> are optional in the specification: choose one when the readers of your files support it.</li>
+  <li><strong><code>xz</code></strong> is for reading files that others wrote. <code>archive</code> writes xz only as stored data, so a file this package writes with <code>xz</code> is a valid xz file, readable by any Avro implementation that reads <code>xz</code>, but no smaller than one with <code>null</code>.</li>
+</ul>
+
+<h2>Checksums</h2>
+<p>
+  Each <code>snappy</code> block carries the CRC32 of its uncompressed data, as the specification
+  requires; a block whose data does not match throws <code>DecodeException</code>.
+  <code>zstandard</code> blocks are written with the checksum of the zstandard frame, so that a
+  damaged block cannot be read as other records, and the checksums of <code>bzip2</code>,
+  <code>xz</code> and <code>zstandard</code> are verified on reading whenever a block has them.
+  Every block also ends with the file's <a href="../start/glossary.html#sync-marker">sync
+  marker</a>, whatever its compression.
+</p>
+
+<h2>Limits stop decompression</h2>
+<p>
+  A small compressed block can expand to gigabytes. For every compression, the readers stop
+  decompressing as soon as a block passes <code>maxBlockBytes</code> or the file passes
+  <code>maxTotalBytes</code>, and throw <code>LimitExceededException</code>; a bomb is never
+  decompressed in full. <code>snappy</code> declares its length first, so a block that declares too
+  much is refused before anything is allocated. The <a href="limits.html#compression-bombs">limits
+  guide</a> shows it.
+</p>
+<p>
+  The decoders of <code>archive</code> have memory caps of their own, such as a zstandard window
+  over 128 MiB. A block over one of those is not over an <code>AvroLimits</code> field, so it
+  throws <code>DecodeException</code>, saying which cap it hit.
+</p>
+
+<h2>Unknown compressions</h2>
+<p>
+  A compression other than the six throws <code>UnsupportedCompressionException</code>, whose
+  <code>compression</code> is the name: from the writers' constructors for the argument, with
+  nothing written, and from <code>AvroFileReader</code> and
+  <code>AvroFileStreamReader.open</code> for a file whose <code>avro.codec</code> names one,
+  before any block is read. A file without <code>avro.codec</code> is a file of
+  <code>null</code>.
+</p>

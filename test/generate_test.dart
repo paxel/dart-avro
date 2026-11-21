@@ -110,6 +110,31 @@ const _loose =
     '"fields": [{"name": "inner", "type": {"type": "record", "name": "Deep", '
     '"fields": [{"name": "n", "type": "int"}]}}, {"name": "again", "type": "Deep"}]}]';
 
+/// Unions of two or more non-null branches: two records that both fit, primitives with
+/// records, nested in arrays and maps, and with null.
+const _event = '''
+{"type": "record", "name": "Event", "namespace": "test.ev", "fields": [
+  {"name": "payload", "type": [
+    {"type": "record", "name": "Click", "fields": [{"name": "x", "type": "int"}]},
+    {"type": "record", "name": "Tap", "fields": [{"name": "x", "type": "int"}]},
+    "string"]},
+  {"name": "maybe", "type": ["null", "int", "Click"]},
+  {"name": "items", "type": {"type": "array", "items":
+    ["string", "Tap", {"type": "array", "items": ["int", "bytes"]}]}},
+  {"name": "by_key", "type": {"type": "map", "values": ["long", "Click", "null"]}},
+  {"name": "nested", "type": {"type": "array", "items": {"type": "map", "values": ["boolean", "double"]}}}
+]}
+''';
+
+/// A record read from older data: a promoted branch and defaults of unions.
+const _shape = '''
+{"type": "record", "name": "Shape", "namespace": "test.ev", "fields": [
+  {"name": "kind", "type": ["long", "string"]},
+  {"name": "label", "type": ["string", "long"], "default": "none"},
+  {"name": "extra", "type": ["null", "long", "string"], "default": null}
+]}
+''';
+
 const _dup1 =
     '{"type": "record", "name": "dup.Shared", "doc": "First.", "fields": '
     '[{"name": "kind", "type": {"type": "enum", "name": "Kind", "symbols": ["A", "B"]}}]}';
@@ -175,7 +200,7 @@ void main() {
   const span = AvroDuration(1, 2, 3);
   const day = AvroDate(2025, 11, 15);
 
-  All all({Object? either = 'text', String? maybeFirst, String? maybeLast = 'last'}) => All(
+  All all({AllEither either = const AllEitherString('text'), String? maybeFirst, String? maybeLast = 'last'}) => All(
     flag: true,
     small: -5,
     big: 1 << 40,
@@ -228,13 +253,14 @@ void main() {
     maybeStamp: stampMs,
     notADate: '2025-11-15',
     unknown: 42,
-    mixedList: [1, 'a'],
-    mixedMap: {'i': 1, 's': 'a'},
+    mixedList: [const AllMixedListItemInt(1), const AllMixedListItemString('a')],
+    mixedMap: {'i': const AllMixedMapValueInt(1), 's': const AllMixedMapValueString('a')},
     nulls: [null, null],
     maybeInners: [inner2],
   );
 
-  Map<String, Object?> generic({Object? either = 'text', String? maybeFirst, String? maybeLast = 'last'}) => {
+  Map<String, Object?> generic({Object? either = const Branch('string', 'text'), String? maybeFirst,
+      String? maybeLast = 'last'}) => {
     'flag': true,
     'small': -5,
     'big': 1 << 40,
@@ -288,8 +314,8 @@ void main() {
     'maybe_stamp': stampMs,
     'not_a_date': '2025-11-15',
     'unknown': 42,
-    'mixed_list': [1, 'a'],
-    'mixed_map': {'i': 1, 's': 'a'},
+    'mixed_list': [const Branch('int', 1), const Branch('string', 'a')],
+    'mixed_map': {'i': const Branch('int', 1), 's': const Branch('string', 'a')},
     'nulls': [null, null],
     'maybe_inners': [{'value': 8}],
   };
@@ -297,9 +323,9 @@ void main() {
   roundTrip('all', All.avroType, all(), generic());
   roundTrip('all with nulls', All.avroType, all(maybeFirst: 'first', maybeLast: null),
       generic(maybeFirst: 'first', maybeLast: null));
-  // 5 fits int and long: the caller names the branch, and decoding gives the plain value.
-  roundTrip('all with a Branch', All.avroType, all(either: const Branch('long', 5)),
-      generic(either: const Branch('long', 5)), all(either: 5));
+  // 5 fits int and long: the class names the branch, and decoding keeps it.
+  roundTrip('all with a long branch', All.avroType, all(either: const AllEitherLong(5)),
+      generic(either: const Branch('long', 5)));
   check('toAvro is the generic value', jsonEncode(All.avroType.toAvro(all()), toEncodable: (o) => '$o') ==
       jsonEncode(generic(), toEncodable: (o) => '$o'));
 
@@ -344,7 +370,66 @@ void main() {
   roundTrip('minimal', Minimal.avroType, const Minimal(name: 'n', count: 1), {'name': 'n', 'count': 1});
 
   check('deep equality', all() == all() && all().hashCode == all().hashCode);
-  check('inequality', all() != all(either: 'other'));
+  check('inequality', all() != all(either: const AllEitherString('other')));
+  check('branches of one value differ', const AllEitherInt(5) != const AllEitherLong(5));
+  check('a branch toString', const AllEitherInt(5).toString() == 'AllEitherInt(5)');
+
+  // Sealed unions.
+  const click = Click(x: 1);
+  const tap = Tap(x: 1);
+  Event event({EventMaybe? maybe = const EventMaybeClick(click)}) => Event(
+    payload: const EventPayloadTap(tap),
+    maybe: maybe,
+    items: [
+      const EventItemsItemString('s'),
+      const EventItemsItemTap(tap),
+      EventItemsItemArray([const EventItemsItemArrayItemInt(3), EventItemsItemArrayItemBytes(bytes([1]))]),
+    ],
+    byKey: {'l': const EventByKeyValueLong(9), 'c': const EventByKeyValueClick(click), 'n': null},
+    nested: [{'b': const EventNestedItemValueBoolean(true), 'd': const EventNestedItemValueDouble(0.5)}],
+  );
+  Map<String, Object?> eventGeneric({Object? maybe = const Branch('test.ev.Click', {'x': 1})}) => {
+    'payload': const Branch('test.ev.Tap', {'x': 1}),
+    'maybe': maybe,
+    'items': [
+      const Branch('string', 's'),
+      const Branch('test.ev.Tap', {'x': 1}),
+      Branch('array', [const Branch('int', 3), Branch('bytes', bytes([1]))]),
+    ],
+    'by_key': {'l': const Branch('long', 9), 'c': const Branch('test.ev.Click', {'x': 1}), 'n': null},
+    'nested': [{'b': const Branch('boolean', true), 'd': const Branch('double', 0.5)}],
+  };
+  roundTrip('event', Event.avroType, event(), eventGeneric());
+  roundTrip('event with null', Event.avroType, event(maybe: null), eventGeneric(maybe: null));
+  roundTrip('event with an int', Event.avroType, event(maybe: const EventMaybeInt(2)),
+      eventGeneric(maybe: const Branch('int', 2)));
+  final eventCodec = TypedCodec(Event.avroType);
+  check('two records that both fit are told apart',
+      eventCodec.decode(eventCodec.encode(event())).payload is EventPayloadTap);
+  check('equal branches of lists', EventItemsItemArray([EventItemsItemArrayItemBytes(bytes([1]))]) ==
+      EventItemsItemArray([EventItemsItemArrayItemBytes(bytes([1]))]) &&
+      EventItemsItemArray([EventItemsItemArrayItemBytes(bytes([1]))]).hashCode ==
+          EventItemsItemArray([EventItemsItemArrayItemBytes(bytes([1]))]).hashCode);
+  String describe(EventPayload payload) => switch (payload) {
+    EventPayloadClick(:final value) => 'click ${value.x}',
+    EventPayloadTap(:final value) => 'tap ${value.x}',
+    EventPayloadString(:final value) => value,
+  };
+  check('an exhaustive switch', describe(event().payload) == 'tap 1' &&
+      describe(const EventPayloadClick(click)) == 'click 1');
+  check('JSON round trip', eventCodec.decodeJson(eventCodec.encodeJson(event())) == event());
+  check('JSON names the branch', eventCodec.encodeJson(event()).startsWith('{"payload":{"test.ev.Tap":'));
+  check('the records of a file', AvroFileReader((AvroFileWriter(eventCodec.avro)
+        ..add(Event.avroType.toAvro(event())))
+      .close())
+      .records(eventCodec.avro)
+      .map(Event.avroType.fromAvro)
+      .single == event());
+  final olderShape = Schema.parse('{"type": "record", "name": "Shape", "namespace": "test.ev", '
+      '"fields": [{"name": "kind", "type": "int"}]}');
+  check('resolution into sealed unions', TypedCodec(Shape.avroType, writer: olderShape)
+          .decode(AvroCodec(writer: olderShape).encode({'kind': 5})) ==
+      const Shape(kind: ShapeKindLong(5), label: ShapeLabelString('none')));
   check('copyWith replaces', all().copyWith(small: 9).small == 9 && all().copyWith(small: 9).text == 'Grüße');
   check('copyWith keeps on null', all().copyWith(maybeLast: null).maybeLast == 'last');
   check('toString', const Inner(value: 7).toString() == 'Inner(value: 7)');
@@ -390,6 +475,8 @@ void main() {
     write('more/empty.avsc', _empty);
     write('more/wide.avsc', _wide);
     write('more/loose.avsc', _loose);
+    write('more/event.avsc', _event);
+    write('more/shape.avsc', _shape);
     write('more/ignored.json', '{}');
     write(
       'more/bag.avsc',
@@ -483,8 +570,10 @@ void main() {
         '// - ${_dir.path}/one.avsc\n'
         '// - ${_dir.path}/more/bag.avsc\n'
         '// - ${_dir.path}/more/empty.avsc\n'
+        '// - ${_dir.path}/more/event.avsc\n'
         '// - ${_dir.path}/more/loose.avsc\n'
         '// - ${_dir.path}/more/paint.avsc\n'
+        '// - ${_dir.path}/more/shape.avsc\n'
         '// - ${_dir.path}/more/void.avsc\n'
         '// - ${_dir.path}/more/wide.avsc\n',
       ),
@@ -500,6 +589,21 @@ void main() {
     // A field of the type null has no Dart field; its generic value is null.
     expect(library, isNot(contains(' nothing;')));
     expect(library, contains("'nothing': null,"));
+    // A union of two or more non-null branches is a sealed class per place of use.
+    expect(library, contains('sealed class EventPayload {'));
+    expect(
+      library,
+      contains('final class EventPayloadClick extends EventPayload {'),
+    );
+    expect(library, contains('  final EventPayload payload;'));
+    expect(library, contains('  final EventMaybe? maybe;'));
+    expect(library, contains('  final List<EventItemsItem> items;'));
+    expect(library, contains('  final List<EventItemsItemArrayItem> value;'));
+    expect(library, contains('  final Map<String, EventByKeyValue?> byKey;'));
+    expect(
+      library,
+      contains('  final List<Map<String, EventNestedItemValue>> nested;'),
+    );
 
     write('main.dart', _program);
     final analyze = await Process.run(_dart, [
@@ -656,6 +760,53 @@ void main() {
       expect(
         await fails(1, [file, '-o', output]),
         allOf(contains(file), contains('"A_B" and "aB"'), contains('"E"')),
+      );
+    });
+
+    test('a union class that clashes', () async {
+      final record = schema(
+        'union_record.avsc',
+        '[{"type": "record", "name": "R", "fields": [{"name": "u", "type": ["int", "string"]}]}, '
+            '{"type": "record", "name": "RU", "fields": []}]',
+      );
+      expect(
+        await fails(1, [record, '-o', output]),
+        allOf(
+          contains(record),
+          contains('the union in the field "u" of "R" and "RU"'),
+          contains('RU'),
+        ),
+      );
+      final branch = schema(
+        'union_branch.avsc',
+        '[{"type": "record", "name": "R", "fields": [{"name": "u", "type": ["int", "string"]}]}, '
+            '{"type": "record", "name": "RUInt", "fields": []}]',
+      );
+      expect(
+        await fails(1, [branch, '-o', output]),
+        contains(
+          'the branch "int" of the union in the field "u" of "R" and "RUInt" '
+          'both give the Dart name RUInt',
+        ),
+      );
+      final core = schema(
+        'union_core.avsc',
+        '{"type": "record", "name": "Date", "fields": [{"name": "time", "type": ["int", "string"]}]}',
+      );
+      expect(
+        await fails(1, [core, '-o', output]),
+        allOf(contains('DateTime'), contains('dart:core')),
+      );
+    });
+
+    test('a class named Branch', () async {
+      final file = schema(
+        'branch.avsc',
+        '{"type": "record", "name": "x.Branch", "fields": []}',
+      );
+      expect(
+        await fails(1, [file, '-o', output]),
+        allOf(contains('Branch'), contains('package:avro')),
       );
     });
 

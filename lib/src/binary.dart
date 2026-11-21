@@ -5,10 +5,22 @@ import 'exceptions.dart';
 
 const _utf8Strict = Utf8Decoder();
 
+/// Thrown instead of a [DecodeException] by a [BinaryReader] whose input is [partial] when a
+/// read needs bytes beyond its end: the input must reach [end] before the read can succeed.
+final class InputUnderflow implements Exception {
+  const InputUnderflow(this.end);
+
+  /// The index into the reader's bytes up to which input is needed.
+  final int end;
+}
+
 /// Reads the binary encoding of Avro from bytes held in memory. Every read checks the
 /// remaining input first, so no declared length can make it allocate beyond the input.
+///
+/// A [partial] reader holds the start of a longer input that is still arriving: a read that
+/// runs out of bytes throws [InputUnderflow] instead of [DecodeException].
 final class BinaryReader {
-  BinaryReader(this._bytes, [this._offset = 0, int? end])
+  BinaryReader(this._bytes, [this._offset = 0, int? end, this.partial = false])
     : _end = end ?? _bytes.length,
       _data = ByteData.sublistView(_bytes);
 
@@ -16,6 +28,9 @@ final class BinaryReader {
   final ByteData _data;
   final int _end;
   int _offset;
+
+  /// Whether more input may follow the bytes of this reader.
+  final bool partial;
 
   /// The offset of the next byte to read.
   int get offset => _offset;
@@ -26,9 +41,18 @@ final class BinaryReader {
   Never fail(String message, [int? at]) =>
       throw DecodeException(message, offset: at ?? _offset);
 
+  /// Fails with [message] at [at] because [count] bytes from the current offset are needed
+  /// and fewer are left; throws [InputUnderflow] instead if the reader is [partial].
+  Never short(int count, String message, [int? at]) {
+    if (!partial) fail(message, at);
+    // Saturated, so that a declared length near 2^63 cannot overflow.
+    const most = 1 << 53;
+    throw InputUnderflow(count > most - _offset ? most : _offset + count);
+  }
+
   void _need(int count) {
     if (count > remaining) {
-      fail('needs $count bytes, but only $remaining are left');
+      short(count, 'needs $count bytes, but only $remaining are left');
     }
   }
 
@@ -85,12 +109,14 @@ final class BinaryReader {
   }
 
   /// A length or count that precedes content: never negative, never beyond the input.
-  int readLength() {
+  /// [check] sees the length before it is compared with the input.
+  int readLength([void Function(int length)? check]) {
     final start = _offset;
     final n = readLong();
     if (n < 0) fail('a length cannot be negative: $n', start);
+    check?.call(n);
     if (n > remaining) {
-      fail('declares $n bytes, but only $remaining are left', start);
+      short(n, 'declares $n bytes, but only $remaining are left', start);
     }
     return n;
   }

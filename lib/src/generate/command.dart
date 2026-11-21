@@ -16,11 +16,6 @@ Writes one Dart library with an immutable class for every record of the schemas.
                        --prefix axt=Axt for AxtDateTime; repeatable
   -h, --help           print this help''';
 
-final _namespace = RegExp(
-  r'^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$',
-);
-final _prefix = RegExp(r'^[A-Z][A-Za-z0-9]*$');
-
 /// Runs the command with [args], writing messages to [out] and [err]; returns the exit code:
 /// 0 on success, 2 for a usage error, 1 for any other failure. Nothing is written on a
 /// failure.
@@ -71,7 +66,7 @@ Future<int> runGenerate(
       final eq = value.indexOf('=');
       final namespace = eq < 0 ? '' : value.substring(0, eq);
       final prefix = eq < 0 ? '' : value.substring(eq + 1);
-      if (!_namespace.hasMatch(namespace) || !_prefix.hasMatch(prefix)) {
+      if (!isValidPrefix(namespace, prefix)) {
         return usage(
           '--prefix "$value" is not <namespace>=<Prefix>, with a Prefix in '
           'UpperCamelCase such as axt=Axt',
@@ -92,12 +87,11 @@ Future<int> runGenerate(
 
   try {
     final files = await _schemaFiles(inputs);
-    final library = generateLibrary(
-      files,
-      prefixes: prefixes,
-      warn: (message) => err.writeln('avro:generate: warning: $message'),
-    );
-    await _write(output, library);
+    final library = generateDart(files, prefixes: prefixes);
+    for (final warning in library.warnings) {
+      err.writeln('avro:generate: warning: $warning');
+    }
+    await _write(output, library.source);
   } on GenerateException catch (e) {
     err.writeln('avro:generate: ${e.message}');
     return 1;
@@ -107,7 +101,7 @@ Future<int> runGenerate(
 
 /// The paths of the schema files: each input in the order given, a directory as its `.avsc`
 /// files, searched recursively and sorted by path. A file reached twice is read once.
-Future<List<SchemaFile>> _schemaFiles(List<String> inputs) async {
+Future<List<SchemaSource>> _schemaFiles(List<String> inputs) async {
   final paths = <String>[];
   for (final input in inputs) {
     if (await FileSystemEntity.isDirectory(input)) {
@@ -125,11 +119,11 @@ Future<List<SchemaFile>> _schemaFiles(List<String> inputs) async {
     }
   }
   final seen = <String>{};
-  final files = <SchemaFile>[];
+  final files = <SchemaSource>[];
   for (final path in paths) {
     if (!seen.add(File(path).absolute.path)) continue;
     try {
-      files.add((path: path, text: await File(path).readAsString()));
+      files.add(SchemaSource(path, await File(path).readAsString()));
     } on FileSystemException catch (e) {
       throw GenerateException(
         '$path: cannot read: ${e.osError?.message ?? e.message}',

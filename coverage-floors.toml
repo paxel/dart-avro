@@ -10,7 +10,7 @@
 [[parts]]
 name = "dart"
 lcov = "coverage/dart.lcov"
-floor = 93.54
+floor = 95.38
 
 [[parts]]
 name = "site"

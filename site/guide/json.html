@@ -1,0 +1,196 @@
+<!-- page: title="JSON encoding" track="guide" order=5 summary="Write and read Avro's JSON encoding with encodeJson and decodeJson: compact or indented, union values as {branch: value} with full names, simple names accepted when unambiguous, bytes as strings, NaN and the infinities as strings, schema resolution, and the errors with their paths." -->
+<p class="lede">
+  Avro has a JSON encoding beside the binary one, which tools show and people read.
+  <code>codec.encodeJson(value)</code> writes a value as JSON text and
+  <code>codec.decodeJson(text)</code> reads it back, with the same values, checks and schema
+  resolution as <code>encode</code> and <code>decode</code>.
+</p>
+
+<h2>Write and read JSON</h2>
+<p>
+  <code>encodeJson</code> takes the same <a href="values.html">plain values</a> as
+  <code>encode</code> and returns a compact <code>String</code>; <code>indent:</code>, such as two
+  spaces, indents it. <code>decodeJson</code> returns the values <code>decode</code> would
+  return. Each Avro type is written the way the specification writes a field default:
+</p>
+<ul>
+  <li>Records and maps are JSON objects, arrays are JSON arrays, enums are their symbol as a string.</li>
+  <li><code>bytes</code> and <code>fixed</code> are strings of the code points 0 to 255, one per byte.</li>
+  <li>A logical type is written as its underlying type: a <code>timestamp-millis</code> as its <code>long</code>.</li>
+  <li>A <code>float</code> is written with the fewest digits that read back as the same float, so <code>0.1</code> stays <code>0.1</code>.</li>
+  <li><code>NaN</code>, <code>Infinity</code> and <code>-Infinity</code>, which JSON has no numbers for, are the strings <code>"NaN"</code>, <code>"Infinity"</code> and <code>"-Infinity"</code>, both ways.</li>
+  <li>A union value is <code>null</code>, or an object with one key, the branch, around the value: <code>{"double": 21.5}</code>.</li>
+</ul>
+<pre data-example="guide/json-write"><code class="language-dart">import 'dart:typed_data';
+
+import 'package:avro/avro.dart';
+
+void main() {
+  final codec = AvroCodec(writer: Schema.parse('''
+  {"type": "record", "name": "Reading", "namespace": "com.example", "fields": [
+    {"name": "sensor", "type": "string"},
+    {"name": "value", "type": ["null", "int", "double"]},
+    {"name": "ratio", "type": "float"},
+    {"name": "raw", "type": "bytes"},
+    {"name": "at", "type": {"type": "long", "logicalType": "timestamp-millis"}}
+  ]}
+  '''));
+
+  final json = codec.encodeJson({
+    'sensor': 'kitchen',
+    'value': 21.5,
+    'ratio': 0.1,
+    'raw': Uint8List.fromList([0, 65, 255]),
+    'at': DateTime.utc(2025, 11, 15, 10),
+  });
+  print(json);
+  print(codec.decodeJson(json));
+
+  print(codec.encodeJson({
+    'sensor': 'hall',
+    'value': null,
+    'ratio': double.nan,
+    'raw': Uint8List(0),
+    'at': DateTime.utc(2025),
+  }, indent: '  '));
+}</code></pre>
+<pre data-example-output="guide/json-write"><code>{"sensor":"kitchen","value":{"double":21.5},"ratio":0.1,"raw":"\u0000Aÿ","at":1763200800000}
+{sensor: kitchen, value: 21.5, ratio: 0.10000000149011612, raw: [0, 65, 255], at: 2025-11-15 10:00:00.000Z}
+{
+  "sensor": "hall",
+  "value": null,
+  "ratio": "NaN",
+  "raw": "",
+  "at": 1735689600000
+}</code></pre>
+<p>
+  The decoded <code>ratio</code> is the <code>double</code> nearest to the float, as
+  <code>decode</code> returns it too; the JSON text has the short form.
+</p>
+
+<h2>Union branches</h2>
+<p>
+  <code>encodeJson</code> names a branch as <code>Branch</code> does: by its full name for a named
+  type, such as <code>com.example.Click</code>, and by its type name otherwise:
+  <code>string</code>, <code>array</code>, <code>map</code>. That is what Apache Avro's Java
+  implementation writes. The branch is chosen as for <code>encode</code>, so a value that more
+  than one branch fits needs a <a href="values.html#naming-the-branch-with-branch"><code>Branch</code></a>.
+</p>
+<p>
+  <code>decodeJson</code> accepts those names, and also the simple name of a named type, such as
+  <code>Scroll</code>, when no other branch of the union has that simple name. A key the union
+  does not have, or a simple name of two branches, throws <code>DecodeException</code>.
+  <code>{"null": null}</code> is read as the <code>null</code> branch, as Java reads it.
+</p>
+<pre data-example="guide/json-unions"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final codec = AvroCodec(writer: Schema.parse('''
+  {"type": "record", "name": "Event", "namespace": "com.example", "fields": [
+    {"name": "payload", "type": [
+      {"type": "record", "name": "Click", "fields": [{"name": "x", "type": "int"}]},
+      {"type": "record", "name": "com.other.Click", "fields": [{"name": "x", "type": "int"}]},
+      {"type": "record", "name": "Scroll", "fields": [{"name": "dy", "type": "int"}]},
+      "string"
+    ]}
+  ]}
+  '''));
+
+  // Written with the full name, as Java writes it.
+  print(codec.encodeJson({'payload': const Branch('com.example.Click', {'x': 3})}));
+
+  // Read with the full name, the type name, or a simple name that only one branch has.
+  for (final json in [
+    '{"payload": {"com.example.Scroll": {"dy": 2}}}',
+    '{"payload": {"string": "hi"}}',
+    '{"payload": {"Scroll": {"dy": 2}}}',
+    '{"payload": {"Click": {"x": 3}}}',
+    '{"payload": {"dy": 2}}',
+  ]) {
+    try {
+      print(codec.decodeJson(json));
+    } on DecodeException catch (e) {
+      print(e);
+    }
+  }
+}</code></pre>
+<pre data-example-output="guide/json-unions"><code>{"payload":{"com.example.Click":{"x":3}}}
+{payload: {dy: 2}}
+{payload: hi}
+{payload: {dy: 2}}
+DecodeException at byte 0 ($.payload): "Click" names more than one branch of the union; use the full name of one of com.example.Click, com.other.Click, com.example.Scroll, string
+DecodeException at byte 0 ($.payload): the union has no branch "dy"; it has com.example.Click, com.other.Click, com.example.Scroll, string</code></pre>
+<p>
+  <code>decodeJson</code> returns the plain value of a union, like <code>decode</code>; a codec
+  made with <code>decodeBranches: true</code> returns a <code>Branch</code>, see
+  <a href="values.html#decoding-into-branch">Decoding into <code>Branch</code></a>.
+</p>
+
+<h2>Resolution and strict input</h2>
+<p>
+  The JSON text is a value of the codec's writer schema. <code>decodeJson</code> reads it as the
+  reader schema, by <a href="resolution.html">schema resolution</a>, exactly as
+  <code>decode</code> reads binary data: promotions apply, and fields the writer schema lacks get
+  the reader's defaults.
+</p>
+<p>
+  The text itself must fit the writer schema exactly. A record needs every field of the writer
+  schema and no other, since the writer's defaults are not filled in; an <code>int</code> or
+  <code>long</code> must be a JSON integer, and an <code>int</code> must fit 32 bits. Anything
+  else throws <code>DecodeException</code>, with offset 0 and the <code>path</code> of the value
+  in the JSON. Text that is not JSON throws it without a path. JSON that repeats a key keeps its
+  last value; it cannot be detected.
+</p>
+<pre data-example="guide/json-resolution"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final v1 = Schema.parse('''
+  {"type": "record", "name": "User", "fields": [
+    {"name": "name", "type": "string"}, {"name": "age", "type": "int"}
+  ]}
+  ''');
+  final v2 = Schema.parse('''
+  {"type": "record", "name": "User", "fields": [
+    {"name": "name", "type": "string"}, {"name": "age", "type": "long"},
+    {"name": "email", "type": ["null", "string"], "default": null}
+  ]}
+  ''');
+
+  // JSON of the writer schema v1, read as v2: the age promoted, the email defaulted.
+  final codec = AvroCodec(writer: v1, reader: v2);
+  print(codec.decodeJson('{"name": "Ada", "age": 36}'));
+
+  // The JSON must be a value of the writer schema, exactly.
+  for (final json in [
+    '{"name": "Ada"}',
+    '{"name": "Ada", "age": 36, "email": null}',
+    '{"name": "Ada", "age": 3000000000}',
+    '{"name": "Ada", "age": 36.0}',
+    '{"name": "Ada", "age": 36',
+  ]) {
+    try {
+      codec.decodeJson(json);
+    } on DecodeException catch (e) {
+      print(e);
+    }
+  }
+}</code></pre>
+<pre data-example-output="guide/json-resolution"><code>{name: Ada, age: 36, email: null}
+DecodeException at byte 0 ($): the field "age" is missing
+DecodeException at byte 0 ($): "email" is not a field of User
+DecodeException at byte 0 ($.age): 3000000000 does not fit 32 bits
+DecodeException at byte 0 ($.age): expected an integer for int, got the number 36.0
+DecodeException at byte 0: not JSON: Unexpected end of input</code></pre>
+<p>
+  <code>encodeJson</code> throws <code>EncodeException</code> for a value that does not fit, as
+  <code>encode</code> does. The codec's <code>maxValueDepth</code> also bounds the nesting of the
+  JSON text, checked before the text is parsed; see <a href="limits.html">Untrusted input and
+  limits</a>.
+</p>
+
+<h2>Generated classes</h2>
+<p>
+  <code>TypedCodec</code> has <code>encodeJson</code> and <code>decodeJson</code> too, for the
+  classes of <a href="codegen.html">code generation</a>: <code>encodeJson</code> writes the type's
+  own schema, and <code>decodeJson</code> reads JSON of the codec's writer schema as the type.
+</p>

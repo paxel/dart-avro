@@ -1,4 +1,4 @@
-<!-- page: title="Value mapping" track="reference" order=1 summary="Every Avro type and logical type and the Dart value encode accepts and decode returns, with the exact behaviour at the edges: uuid case, lost precision, out-of-range timestamps; and the Dart types of generated code." -->
+<!-- page: title="Value mapping" track="reference" order=1 summary="Every Avro type and logical type and the Dart value encode accepts and decode returns, with the exact behaviour at the edges: uuid case, lost precision, out-of-range timestamps; decodeBranches; the Dart types of generated code, sealed unions included, and the generator library generateDart." -->
 <p class="lede">
   The Dart value of every Avro type and logical type, for <code>encode</code> and for
   <code>decode</code>. A value that does not fit throws <code>EncodeException</code>; bytes that do
@@ -37,7 +37,7 @@
     <tr><td><code>array</code></td> <td><code>List&lt;Object?&gt;</code>, but not a <code>Uint8List</code></td>  <td><code>List&lt;Object?&gt;</code></td></tr>
     <tr><td><code>map</code></td>   <td><code>Map&lt;String, Object?&gt;</code></td>                            <td><code>Map&lt;String, Object?&gt;</code></td></tr>
     <tr><td><code>fixed</code></td> <td><code>Uint8List</code> of exactly the size</td>                         <td><code>Uint8List</code></td></tr>
-    <tr><td>union</td>              <td>the value of one branch, or <code>Branch(name, value)</code></td>       <td>the value of the branch, never a <code>Branch</code></td></tr>
+    <tr><td>union</td>              <td>the value of one branch, or <code>Branch(name, value)</code></td>       <td>the value of the branch; a <code>Branch</code> with <code>decodeBranches</code></td></tr>
   </tbody>
 </table>
 </div>
@@ -45,6 +45,27 @@
   The rules for choosing a union branch are in
   <a href="../guide/values.html#how-a-union-branch-is-chosen">Values and unions</a>. Every list and
   map that <code>decode</code> returns is new and growable.
+</p>
+
+<h2 id="decodebranches"><code>decodeBranches</code></h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Union</th>                                           <th><code>decodeBranches: false</code>, the default</th><th><code>decodeBranches: true</code></th></tr>
+  </thead>
+  <tbody>
+    <tr><td>A <code>null</code> value of any union</td>      <td><code>null</code></td>                       <td><code>null</code></td></tr>
+    <tr><td><code>["null", T]</code>, or one branch only</td>   <td>The value of <code>T</code></td>             <td>The value of <code>T</code></td></tr>
+    <tr><td>Two or more non-null branches</td>                 <td>The value of the branch</td>                 <td><code>Branch(name, value)</code>, named after the reader's branch</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  <code>AvroCodec(decodeBranches: true)</code> applies it in <code>decode</code>,
+  <code>decodeSingleObject</code>, <code>decodeJson</code>, the records of a container file read
+  with the codec, and the reader defaults that resolution fills in, nested unions included. A
+  value decoded with it encodes back to the same bytes. <code>Branch.==</code> compares the name,
+  and the value with <code>==</code>. <code>TypedCodec</code> always decodes with it.
 </p>
 
 <h2>Logical types</h2>
@@ -165,7 +186,7 @@
     <tr><td><code>enum</code></td>                       <td>A generated <code>enum</code></td>                 <td>Its <code>symbol</code>, a <code>String</code></td></tr>
     <tr><td><code>array</code>, <code>map</code></td>    <td><code>List&lt;T&gt;</code>, <code>Map&lt;String, T&gt;</code></td><td>A list or map of the generic values</td></tr>
     <tr><td><code>["null", T]</code></td>                <td><code>T?</code></td>                               <td>null, or the generic value of <code>T</code></td></tr>
-    <tr><td>any other union</td>                         <td><code>Object?</code></td>                          <td>The value itself, a <code>Branch</code> included</td></tr>
+    <tr><td>any other union</td>                         <td>A generated <code>sealed class</code> per place of use, with a <code>final class</code> per branch; nullable if the union has <code>null</code></td><td>A <code>Branch</code> of the branch's generic value</td></tr>
     <tr><td><code>fixed</code></td>                      <td><code>Uint8List</code></td>                        <td>The same</td></tr>
     <tr><td><code>null</code> as a field</td>            <td>No field</td>                                      <td><code>null</code></td></tr>
     <tr><td>every other type</td>                        <td>Its Dart value, as above</td>                      <td>The same</td></tr>
@@ -179,7 +200,33 @@
   </thead>
   <tbody>
     <tr><td><code>AvroType&lt;T&gt;</code></td> <td>A generated class's <code>avroType</code>: <code>schemaJson</code>, the <code>schema</code> parsed from it once, <code>toAvro</code> and <code>fromAvro</code></td></tr>
-    <tr><td><code>TypedCodec&lt;T&gt;</code></td><td><code>encode</code>, <code>decode</code>, <code>encodeSingleObject</code> and <code>decodeSingleObject</code> of <code>T</code>; <code>writer:</code> resolves older data, encoding always uses the type's schema; <code>avro</code> is the underlying <code>AvroCodec</code></td></tr>
+    <tr><td><code>TypedCodec&lt;T&gt;</code></td><td><code>encode</code>, <code>decode</code>, <code>encodeJson</code>, <code>decodeJson</code>, <code>encodeSingleObject</code> and <code>decodeSingleObject</code> of <code>T</code>; <code>writer:</code> resolves older data, encoding always uses the type's schema; <code>avro</code> is the underlying <code>AvroCodec</code>, with <code>decodeBranches</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  The sealed classes replace the <code>Object?</code> that code generated by 0.2.0 held for such
+  a union: that code must be regenerated with 0.3.0. The names of the sealed classes, and the
+  reserved name <code>Branch</code>, are in the <a href="../guide/codegen.html#unions">Code
+  generation</a> guide.
+</p>
+
+<h2>The generator library</h2>
+<p>
+  <code>package:avro/generate.dart</code> is the generator of <code>dart run avro:generate</code>
+  without files and without formatting.
+</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Member</th>                                   <th>What it is</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>generateDart(List&lt;SchemaSource&gt; sources, {Map&lt;String, String&gt; prefixes})</code></td><td>The Dart library of the classes, enums and sealed unions of <code>sources</code>; <code>prefixes</code> maps a namespace to the prefix of its types, as <code>--prefix</code> does</td></tr>
+    <tr><td><code>SchemaSource(name, text)</code></td>       <td>The JSON text of one schema, and the name it is known by in the library's header and in messages, such as a path</td></tr>
+    <tr><td><code>GeneratedLibrary</code></td>               <td><code>source</code>, the Dart source, not formatted, and <code>warnings</code>, a <code>List&lt;String&gt;</code></td></tr>
+    <tr><td><code>GenerateException</code></td>             <td>Thrown for a source that is not a valid schema, two definitions of one name that differ, or a Dart name that cannot be generated or clashes; its <code>message</code> starts with the source's name</td></tr>
+    <tr><td><code>ArgumentError</code></td>                 <td>Thrown for a key of <code>prefixes</code> that is not a namespace, or a value that is not an UpperCamelCase prefix</td></tr>
   </tbody>
 </table>
 </div>

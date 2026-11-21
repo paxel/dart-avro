@@ -1,0 +1,152 @@
+<!-- page: title="Streamed container files" track="guide" order=8 summary="Read a container file from a byte stream with AvroFileStreamReader.open, records() and cancel(), and write one to a stream sink with AvroFileStreamWriter: one block in memory at a time, the same bytes, checks and errors as the in-memory classes, and maxBlockBytes on the compressed size and the header." -->
+<p class="lede">
+  <code>AvroFileReader</code> and <code>AvroFileWriter</code> hold the whole file in memory.
+  <code>AvroFileStreamReader</code> reads a <a href="container-files.html">container file</a> from
+  a <code>Stream&lt;List&lt;int&gt;&gt;</code>, and <code>AvroFileStreamWriter</code> writes one
+  to a <code>StreamSink&lt;List&lt;int&gt;&gt;</code>, such as a file of <code>dart:io</code> or a
+  socket, with one block in memory at a time.
+</p>
+
+<h2>Write and read a file</h2>
+<p>
+  <code>AvroFileStreamWriter(codec, sink, …)</code> takes the options of
+  <code>AvroFileWriter</code>: <code>compression</code>, <code>metadata</code>,
+  <code>schemaJson</code>, <code>syncMarker</code> and <code>blockSize</code>, with the same
+  defaults and checks. It writes the header to the sink at once, and each block when it reaches
+  <code>blockSize</code> or at <code>flush()</code>. <code>close()</code> writes the last block,
+  closes the sink, and completes when the sink is closed.
+</p>
+<p>
+  <code>AvroFileStreamReader.open(stream, limits:)</code> completes once the header has arrived,
+  so <code>header</code> is there before any block is read. <code>records()</code> is a
+  <code>Stream</code> of the records, decoded as each block arrives.
+</p>
+<pre data-example="guide/streams-file"><code class="language-dart">import 'dart:io';
+
+import 'package:avro/avro.dart';
+
+Future&lt;void&gt; main() async {
+  final codec = AvroCodec(writer: Schema.parse('''
+  {"type": "record", "name": "Event", "fields": [
+    {"name": "id", "type": "long"}, {"name": "kind", "type": "string"}
+  ]}
+  '''));
+  final dir = Directory.systemTemp.createTempSync('avro');
+  final file = File('${dir.path}/events.avro');
+
+  // Write: the header at once, each block as it ends.
+  final writer = AvroFileStreamWriter(codec, file.openWrite(), compression: 'zstandard');
+  for (var id = 1; id &lt;= 3; id++) {
+    writer.add({'id': id, 'kind': id.isOdd ? 'odd' : 'even'});
+  }
+  await writer.close(); // the last block, then the file is closed
+
+  // Read: open completes once the header has arrived.
+  final reader = await AvroFileStreamReader.open(file.openRead());
+  print(reader.header.compression);
+  await for (final record in reader.records()) {
+    print(record);
+  }
+
+  dir.deleteSync(recursive: true);
+}</code></pre>
+<pre data-example-output="guide/streams-file"><code>zstandard
+{id: 1, kind: odd}
+{id: 2, kind: even}
+{id: 3, kind: odd}</code></pre>
+
+<h2>The same bytes and the same rules</h2>
+<p>
+  The stream writer writes byte for byte what <code>AvroFileWriter</code> returns for the same
+  records, flushes and sync marker, and the stream reader returns the records, the errors and the
+  offsets that <code>AvroFileReader</code> gives for the same bytes, however the stream cuts them
+  into chunks. What the <a href="container-files.html">Container files</a> guide says holds for
+  both:
+</p>
+<ul>
+  <li><code>add</code> throws <code>EncodeException</code> for a record that does not fit, and leaves the block as it was.</li>
+  <li>A <code>metadata</code> key starting with <code>avro.</code>, a <code>syncMarker</code> that is not 16 bytes or a <code>schemaJson</code> of another schema throw <code>ArgumentError</code>, and an unknown compression throws <code>UnsupportedCompressionException</code>, before anything is written to the sink.</li>
+  <li><code>records(codec)</code> decodes with your codec, whose writer schema must have the canonical form of the file's schema; otherwise the stream has a <code>DecodeException</code> before the first record.</li>
+  <li>The stream of records ends with a <code>DecodeException</code> for a malformed or cut-off block, and with a <code>LimitExceededException</code> for a block over the <a href="limits.html">limits</a>, after the records before it.</li>
+</ul>
+<pre data-example="guide/streams-same"><code class="language-dart">import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:avro/avro.dart';
+
+Future&lt;void&gt; main() async {
+  final codec = AvroCodec(writer: Schema.parse('"string"'));
+  final sync = Uint8List.fromList(List.generate(16, (i) =&gt; i));
+
+  // The stream writer writes the bytes AvroFileWriter returns.
+  final sink = StreamController&lt;List&lt;int&gt;&gt;();
+  final collected = sink.stream.expand((chunk) =&gt; chunk).toList();
+  final writer = AvroFileStreamWriter(codec, sink, syncMarker: sync, compression: 'snappy')
+    ..add('a')
+    ..add('b')
+    ..flush() // one block: a, b
+    ..add('c');
+  await writer.close(); // one more block: c
+  final streamed = Uint8List.fromList(await collected);
+
+  final memory = AvroFileWriter(codec, syncMarker: sync, compression: 'snappy')
+    ..add('a')
+    ..add('b')
+    ..flush()
+    ..add('c');
+  print(_same(streamed, memory.close()));
+
+  // The reader takes the bytes in chunks of any size, here 7 bytes each.
+  Stream&lt;List&lt;int&gt;&gt; chunks() async* {
+    for (var i = 0; i &lt; streamed.length; i += 7) {
+      yield streamed.sublist(i, i + 7 &gt; streamed.length ? streamed.length : i + 7);
+    }
+  }
+
+  final reader = await AvroFileStreamReader.open(chunks());
+  print(await reader.records().toList());
+
+  // Stop early: cancel ends the records without an error.
+  final again = await AvroFileStreamReader.open(chunks());
+  await for (final record in again.records()) {
+    print(record);
+    await again.cancel();
+  }
+  try {
+    again.records();
+  } on StateError catch (e) {
+    print(e.message);
+  }
+}
+
+bool _same(Uint8List a, Uint8List b) =&gt;
+    a.length == b.length &amp;&amp; Iterable.generate(a.length).every((i) =&gt; a[i] == b[i]);</code></pre>
+<pre data-example-output="guide/streams-same"><code>true
+[a, b, c]
+a
+the reader is cancelled</code></pre>
+
+<h2>Stopping and errors of the stream</h2>
+<ul>
+  <li><code>records()</code> can be called once. A second call, or a call after <code>cancel()</code>, throws <code>StateError</code>.</li>
+  <li><code>cancel()</code> cancels the subscription to the input. A stream of records that is running ends, without an error.</li>
+  <li>The subscription to the input is cancelled when <code>open</code> fails and when the stream of records ends.</li>
+  <li>An error of the input stream itself, such as a <code>FileSystemException</code>, is passed on as it is, not wrapped.</li>
+  <li>The writer's <code>add</code>, <code>flush</code> and <code>close</code> throw <code>StateError</code> after <code>close</code>. An error of the sink is not wrapped either.</li>
+</ul>
+
+<h2>Memory</h2>
+<p>
+  The reader holds the header while it reads it, and then one block at a time: its compressed
+  bytes and the decompressed records. <code>maxBlockBytes</code> bounds both. A block that
+  declares more compressed bytes than <code>maxBlockBytes</code> fails before its bytes are
+  buffered, and so does a header longer than <code>maxBlockBytes</code>, in <code>open</code>; see
+  <a href="limits.html#streamed-files">the limits guide</a>.
+</p>
+<p>
+  The writer holds the current block until it ends, and hands each block to the sink with
+  <code>add</code>; it does not wait for the sink. A sink that buffers, such as the
+  <code>IOSink</code> of <code>File.openWrite</code>, keeps what it has not written yet: when you
+  write many blocks to a slow sink, <code>await</code> the sink's own <code>flush()</code> now and
+  then, before you add more records.
+</p>

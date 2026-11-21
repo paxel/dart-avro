@@ -1,0 +1,131 @@
+<!-- page: title="Container files" track="reference" order=3 summary="The compressions and what each supports, and the four container file types: AvroFileWriter, AvroFileReader, AvroFileStreamWriter and AvroFileStreamReader, their arguments, members, memory and errors." -->
+<p class="lede">
+  The compressions of container files, and the classes that read and write them. The guides
+  <a href="../guide/container-files.html">Container files</a>,
+  <a href="../guide/compressions.html">Compressions</a> and
+  <a href="../guide/streams.html">Streamed container files</a> show them at work.
+</p>
+
+<h2>The compressions</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th><code>avro.codec</code></th><th>Read</th><th>Write</th><th>Implemented by</th>              <th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>null</code></td>       <td>yes</td> <td>yes</td>  <td>this package</td>                 <td>The default; also a file without <code>avro.codec</code></td></tr>
+    <tr><td><code>deflate</code></td>    <td>yes</td> <td>yes</td>  <td><code>dart:io</code></td>       <td>Raw DEFLATE</td></tr>
+    <tr><td><code>snappy</code></td>     <td>yes</td> <td>yes</td>  <td>this package</td>                 <td>Each block followed by the big-endian CRC32 of its uncompressed data, checked on reading; the declared length is checked before anything is allocated</td></tr>
+    <tr><td><code>bzip2</code></td>      <td>yes</td> <td>yes</td>  <td><code>archive</code></td>        <td>Checksums verified on reading</td></tr>
+    <tr><td><code>xz</code></td>         <td>yes</td> <td>yes</td>  <td><code>archive</code></td>        <td>Written stored: valid xz, but not compressed. Checksums verified on reading</td></tr>
+    <tr><td><code>zstandard</code></td>  <td>yes</td> <td>yes</td>  <td><code>archive</code></td>        <td>Written with the frame's checksum. Checksums verified on reading</td></tr>
+    <tr><td>anything else</td>           <td>no</td>  <td>no</td>   <td></td>                             <td><code>UnsupportedCompressionException</code> from the constructor of a writer, from <code>AvroFileReader</code> and from <code>AvroFileStreamReader.open</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  For every compression, the readers stop decompressing a block as soon as it exceeds
+  <code>maxBlockBytes</code>, or the file <code>maxTotalBytes</code>, and throw
+  <code>LimitExceededException</code>. A memory cap of an <code>archive</code> decoder, such as a
+  zstandard window over 128 MiB, throws <code>DecodeException</code>.
+</p>
+
+<h2>The four types</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Type</th>                          <th>Input or output</th>                         <th>In memory</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>AvroFileWriter</code></td>    <td>Returns the file from <code>close()</code> as a <code>Uint8List</code></td><td>The whole file</td></tr>
+    <tr><td><code>AvroFileReader</code></td>    <td>A <code>Uint8List</code> of the whole file</td>  <td>The whole file, and one decompressed block</td></tr>
+    <tr><td><code>AvroFileStreamWriter</code></td><td>A <code>StreamSink&lt;List&lt;int&gt;&gt;</code></td><td>The current block</td></tr>
+    <tr><td><code>AvroFileStreamReader</code></td><td>A <code>Stream&lt;List&lt;int&gt;&gt;</code></td><td>The header while it is read, then one block, compressed and decompressed</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  The two writers write the same bytes for the same records, flushes and sync marker. The two
+  readers return the same records, errors and offsets for the same bytes, except for the limits
+  that only the stream reader checks.
+</p>
+
+<h2>The writers</h2>
+<p>
+  <code>AvroFileWriter(codec, {…})</code> and <code>AvroFileStreamWriter(codec, sink, {…})</code>
+  take the same named arguments:
+</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Argument</th>             <th>Default</th>                       <th>Rules</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>compression</code></td><td><code>'null'</code></td>       <td>One of the six above, or <code>UnsupportedCompressionException</code></td></tr>
+    <tr><td><code>metadata</code></td>   <td>none</td>                      <td><code>Map&lt;String, Uint8List&gt;</code>, written first, in its order; a key starting with <code>avro.</code> throws <code>ArgumentError</code></td></tr>
+    <tr><td><code>schemaJson</code></td> <td>the writer schema's text</td>  <td>Written exactly as given; another canonical form than the writer schema's throws <code>ArgumentError</code></td></tr>
+    <tr><td><code>syncMarker</code></td> <td>16 random bytes</td>           <td>Not 16 bytes throws <code>ArgumentError</code></td></tr>
+    <tr><td><code>blockSize</code></td>  <td>65,536 bytes</td>              <td>A block ends after the record that makes it reach this size, before compression</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Member</th>                <th><code>AvroFileWriter</code></th>               <th><code>AvroFileStreamWriter</code></th></tr>
+  </thead>
+  <tbody>
+    <tr><td>constructor</td>           <td>Checks the arguments</td>                     <td>Checks the arguments, then writes the header to the sink; nothing is written if a check fails</td></tr>
+    <tr><td><code>add(record)</code></td><td>Encodes one record into the block</td>       <td>The same, and writes the block to the sink when it reaches <code>blockSize</code></td></tr>
+    <tr><td><code>flush()</code></td>  <td>Ends the current block, if it has records</td><td>Writes the current block to the sink, if it has records</td></tr>
+    <tr><td><code>close()</code></td>  <td>Ends the last block; returns the file</td>    <td>Writes the last block and closes the sink; a <code>Future</code> that completes when the sink is closed</td></tr>
+    <tr><td><code>codec</code>, <code>compression</code>, <code>syncMarker</code>, <code>blockSize</code></td><td colspan="2">The values the writer was made with</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  <code>add</code> throws <code>EncodeException</code> for a record that does not fit, and leaves
+  the block unchanged. After <code>close</code>, <code>add</code>, <code>flush</code> and
+  <code>close</code> throw <code>StateError</code>. The stream writer does not wait for the sink,
+  and an error of the sink is not wrapped.
+</p>
+
+<h2>The readers</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Member</th>                     <th><code>AvroFileReader</code></th>                   <th><code>AvroFileStreamReader</code></th></tr>
+  </thead>
+  <tbody>
+    <tr><td>making one</td>                 <td><code>AvroFileReader(bytes, {limits})</code> reads the header</td><td><code>await AvroFileStreamReader.open(stream, {limits})</code> completes once the header has arrived</td></tr>
+    <tr><td><code>header</code></td>        <td colspan="2"><code>metadata</code>, <code>schemaJson</code>, <code>compression</code> and <code>syncMarker</code>, an <code>AvroFileHeader</code></td></tr>
+    <tr><td><code>limits</code></td>        <td colspan="2">The limits of the blocks, of the file's schema, and of the codec of <code>records()</code></td></tr>
+    <tr><td><code>records([codec])</code></td><td>A lazy <code>Iterable</code>; each iteration starts again from the first block</td><td>A <code>Stream</code>; can be called once</td></tr>
+    <tr><td><code>cancel()</code></td>      <td>none</td>                                         <td>Cancels the input; a running stream of records ends without an error</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  <code>records()</code> decodes with a codec of the file's own schema; <code>records(codec)</code>
+  with <code>codec</code>, whose writer schema must have the canonical form of the file's schema.
+  What can go wrong, and when:
+</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Case</th>                                                     <th><code>AvroFileReader</code></th>       <th><code>AvroFileStreamReader</code></th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Not a container file, a malformed header</td>                 <td><code>DecodeException</code> from the constructor</td><td><code>DecodeException</code> from <code>open</code></td></tr>
+    <tr><td>A compression it does not know</td>                            <td><code>UnsupportedCompressionException</code> from the constructor</td><td><code>UnsupportedCompressionException</code> from <code>open</code></td></tr>
+    <tr><td>A header longer than <code>maxBlockBytes</code></td>           <td>not checked</td>                       <td><code>LimitExceededException</code> from <code>open</code></td></tr>
+    <tr><td>The file's schema is not valid</td>                            <td colspan="2"><code>SchemaParseException</code> when the records start, with or without a codec</td></tr>
+    <tr><td>A codec of another writer schema</td>                          <td colspan="2"><code>DecodeException</code> before the first record, naming both fingerprints</td></tr>
+    <tr><td>A block that declares more than <code>maxBlockBytes</code> compressed bytes</td><td>not checked; the decompressed size is</td><td><code>LimitExceededException</code> before the block is read</td></tr>
+    <tr><td>A block or the file over the limits, decompressed</td>         <td colspan="2"><code>LimitExceededException</code>, after the records before it</td></tr>
+    <tr><td>A malformed or cut-off block, a wrong sync marker or checksum</td><td colspan="2"><code>DecodeException</code>, after the records before it</td></tr>
+    <tr><td>An error of the input stream</td>                              <td>none</td>                              <td>Passed on as it is</td></tr>
+    <tr><td><code>records</code> a second time, or after <code>cancel</code></td><td>none</td>                   <td><code>StateError</code></td></tr>
+  </tbody>
+</table>
+</div>

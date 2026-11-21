@@ -1,9 +1,10 @@
-<!-- page: title="Container files" track="guide" order=5 summary="Write object container files with AvroFileWriter (compression, metadata, schemaJson, syncMarker, blockSize, flush and close) and read them with AvroFileReader: the header first, the records lazily, with your own codec." -->
+<!-- page: title="Container files" track="guide" order=6 summary="Write object container files with AvroFileWriter (compression, metadata, schemaJson, syncMarker, blockSize, flush and close) and read them with AvroFileReader: the header first, the six compressions, the records lazily, with your own codec, and the codec check." -->
 <p class="lede">
   A <a href="../start/glossary.html#container-file">container file</a> holds many records of one
   schema, with the schema in its header. It is what other Avro libraries call an
   <code>.avro</code> file. <code>AvroFileWriter</code> writes one in memory and
-  <code>AvroFileReader</code> reads one from memory.
+  <code>AvroFileReader</code> reads one from memory; for files read from a stream and written to
+  a sink, see <a href="streams.html">Streamed container files</a>.
 </p>
 
 <h2>The layout</h2>
@@ -30,7 +31,7 @@
     <tr><th>Argument</th>            <th>Default</th>                       <th>What it does</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>compression</code></td><td><code>'null'</code></td>      <td><code>'null'</code> or <code>'deflate'</code> (raw DEFLATE, as the specification says); anything else throws <code>UnsupportedCompressionException</code></td></tr>
+    <tr><td><code>compression</code></td><td><code>'null'</code></td>      <td>One of the six <a href="compressions.html">compressions</a>: <code>'null'</code>, <code>'deflate'</code> (raw DEFLATE, as the specification says), <code>'snappy'</code>, <code>'bzip2'</code>, <code>'xz'</code> (written stored, without being compressed) or <code>'zstandard'</code> (written with a checksum); anything else throws <code>UnsupportedCompressionException</code></td></tr>
     <tr><td><code>metadata</code></td>   <td>none</td>                      <td>Your entries, <code>Map&lt;String, Uint8List&gt;</code>, written first and in your order; a key starting with <code>avro.</code> throws <code>ArgumentError</code></td></tr>
     <tr><td><code>schemaJson</code></td> <td>the writer schema's <code>jsonText</code></td><td>The text of <code>avro.schema</code>, written exactly as given; it must have the canonical form of the codec's writer schema, or it throws <code>ArgumentError</code></td></tr>
     <tr><td><code>syncMarker</code></td> <td>16 random bytes</td>            <td>The sync marker; any other length than 16 throws <code>ArgumentError</code></td></tr>
@@ -94,8 +95,9 @@ deflate
   <code>AvroFileReader(bytes, limits:)</code> reads the header when it is made, and nothing else.
   So you can look at the metadata, the schema and the compression before you decode any record.
   The constructor throws <code>DecodeException</code> if the bytes are not a container file, and
-  <code>UnsupportedCompressionException</code> if the blocks use a compression other than
-  <code>null</code> and <code>deflate</code>, such as <code>snappy</code>.
+  <code>UnsupportedCompressionException</code> if the blocks use a compression other than the six
+  it knows: <code>null</code>, <code>deflate</code>, <code>snappy</code>, <code>bzip2</code>,
+  <code>xz</code> and <code>zstandard</code>.
 </p>
 <div class="table-wrap">
 <table>
@@ -105,7 +107,7 @@ deflate
   <tbody>
     <tr><td><code>metadata</code></td>  <td>Every entry, <code>avro.schema</code> and <code>avro.codec</code> included, in the order of the file, as <code>Uint8List</code></td></tr>
     <tr><td><code>schemaJson</code></td><td>The text of <code>avro.schema</code></td></tr>
-    <tr><td><code>compression</code></td><td><code>null</code> or <code>deflate</code>; <code>null</code> when the file has no <code>avro.codec</code></td></tr>
+    <tr><td><code>compression</code></td><td><code>null</code>, <code>deflate</code>, <code>snappy</code>, <code>bzip2</code>, <code>xz</code> or <code>zstandard</code>; <code>null</code> when the file has no <code>avro.codec</code></td></tr>
     <tr><td><code>syncMarker</code></td><td>The 16 bytes that end every block</td></tr>
   </tbody>
 </table>
@@ -190,5 +192,8 @@ not a file of events: "string"</code></pre>
 <p>
   Both classes work on bytes in memory. Read and write the bytes with <code>dart:io</code>, for
   example <code>File('events.avro').readAsBytesSync()</code>. The whole file is in memory while it
-  is read; of its records, only one decompressed block at a time.
+  is read; of its records, only one decompressed block at a time. For a file too large for that,
+  or one that arrives over the network, use <code>AvroFileStreamReader</code> and
+  <code>AvroFileStreamWriter</code>, which hold one block at a time; see
+  <a href="streams.html">Streamed container files</a>.
 </p>

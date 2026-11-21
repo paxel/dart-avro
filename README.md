@@ -8,21 +8,27 @@
 [![Fuzz](https://github.com/paxel/dart-avro/actions/workflows/fuzz.yml/badge.svg?branch=summer)](https://github.com/paxel/dart-avro/actions/workflows/fuzz.yml)
 [![Release](https://img.shields.io/github/v/release/paxel/dart-avro)](https://github.com/paxel/dart-avro/releases)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-MIT)
-[![pub.dev](https://img.shields.io/pub/v/avro)](https://pub.dev/packages/avro)
+[![pub.dev](https://img.shields.io/pub/v/avro)](https://pub.dev/packages/avro) [![docs](https://img.shields.io/badge/docs-paxel.github.io%2Fdart--avro-blue)](https://paxel.github.io/dart-avro/)
 
 # avro
 
 A pure-Dart implementation of [Apache Avro 1.12](https://avro.apache.org/docs/1.12.0/specification/) for the Dart VM and AOT: Android, iOS and desktop. Flutter web is not supported.
 
-## Scope of the first release
+## Documentation
+
+- The user guide: https://paxel.github.io/dart-avro/, with a Start track, a Guide with one task per page, and a Reference.
+- The API reference: https://pub.dev/documentation/avro/latest/.
+
+## What it covers
 
 - Every primitive, complex and logical type of Avro 1.12.
-- Binary encoding and single-object encoding.
+- Binary encoding, single-object encoding and JSON encoding.
 - Schema parsing and schema resolution between a writer and a reader schema.
 - Parsing Canonical Form, with the fingerprints CRC-64-AVRO, MD5 and SHA-256.
-- Object container files, read and write, compressed with `null` or `deflate`.
+- Object container files, read and write, in memory or as streams, compressed with `null`, `deflate`, `snappy`, `bzip2`, `xz` or `zstandard`.
+- Typed Dart classes generated from `.avsc` files with `dart run avro:generate` or the library `package:avro/generate.dart`, with a sealed class for each union of two or more non-null branches, encoded and decoded with `TypedCodec`.
 
-Not in the first release: JSON encoding, the compressions `snappy`, `bzip2`, `xz` and `zstandard`, the Avro IPC/RPC protocol and code generation.
+Not covered: the Avro IPC/RPC protocol.
 
 ## Licence
 
