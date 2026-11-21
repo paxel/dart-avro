@@ -39,7 +39,9 @@ final class AvroLimits {
   /// The nesting depth of one decoded value, such as a recursive record holding itself.
   final int? maxValueDepth;
 
-  /// The item count of one array or map whose items can be encoded in zero bytes, such as an
-  /// array of `null`. Any other count is bounded by the remaining input.
+  /// The item count of one array whose items can be encoded in zero bytes, such as an array
+  /// of `null`, and the record count of a container block of such records. Any other count,
+  /// including that of a map, whose entries always take their key's length, is bounded by the
+  /// remaining input.
   final int? maxZeroSizeItems;
 }

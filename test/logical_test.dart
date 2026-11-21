@@ -43,7 +43,16 @@ void main() {
 
     test('a string that is not a UUID is rejected', () {
       final s = logical('string', 'uuid');
-      expect(() => codecOf(s).encode('nope'), throwsA(isA<EncodeException>()));
+      expect(
+        () => codecOf(s).encode('nope'),
+        throwsA(
+          isA<EncodeException>().having(
+            (e) => e.message,
+            'message',
+            '"nope" is not a UUID',
+          ),
+        ),
+      );
       expect(
         () => codecOf(s).decode(codecOf('"string"').encode('nope')),
         throwsA(isA<DecodeException>()),

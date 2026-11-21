@@ -348,6 +348,9 @@ Object? toUnderlying(Logical l, Schema schema, Object? value, String path) {
     '$value would lose its $what in ${schema.logicalType}',
     path: path,
   );
+  if (l == Logical.uuid && value is String && !fitsLogical(l, value)) {
+    throw EncodeException('"$value" is not a UUID', path: path);
+  }
   if (!fitsLogical(l, value)) {
     wrong(switch (l) {
       Logical.decimal || Logical.bigDecimal => 'AvroDecimal',

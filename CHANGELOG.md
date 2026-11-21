@@ -16,6 +16,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A writer value read as a reader union takes the branch Apache Avro's Java implementation takes: the same type or full name first, then a record that resolves, then a promotion. An `int` read as `["null", "double", "int"]` now stays an `int`.
 - Every limit of `AvroLimits` throws `LimitExceededException`: a value nested deeper than `maxValueDepth` on encode, and a container block with more zero-size records than `maxZeroSizeItems`, no longer throw `EncodeException` and `DecodeException`.
 
+### Fixed
+
+- A string that is not a UUID, encoded as the logical type `uuid`, fails with `"…" is not a UUID` instead of "expected a UUID String for uuid, got String".
+- The API documentation of `AvroLimits.maxZeroSizeItems` says it bounds arrays and container blocks, not maps.
+
 ---
 
 Historical changes have been moved to [OLDER_CHANGES.md](OLDER_CHANGES.md).
