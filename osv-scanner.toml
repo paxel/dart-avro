@@ -23,3 +23,20 @@ license.override = ["Apache-2.0"]
 effectiveUntil = 2027-05-21
 reason = """The interop job's Python avro (tool/interop/requirements.txt): deps.dev reports its \
 licence as non-standard; its LICENSE.txt in apache/avro is Apache-2.0."""
+
+[[PackageOverrides]]
+name = "minimatch"
+ecosystem = "npm"
+license.ignore = true
+effectiveUntil = 2027-05-21
+reason = """minimatch is under the Blue Oak Model License 1.0.0, a permissive licence that \
+asks only for the licence text or a link to it to travel with copies. It comes through eslint \
+and typescript-eslint of the docs site and is installed for linting only."""
+
+[[PackageOverrides]]
+name = "@isaacs/nonrecursive-glob-match"
+ecosystem = "npm"
+license.ignore = true
+effectiveUntil = 2027-05-21
+reason = """A dependency of minimatch under the same Blue Oak Model License 1.0.0, installed \
+with eslint for linting only."""
