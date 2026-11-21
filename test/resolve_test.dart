@@ -102,7 +102,7 @@ void main() {
             isA<ResolutionException>().having(
               (e) => e.path,
               'path',
-              r'$.missing',
+              'Memo.missing',
             ),
           ),
         );
