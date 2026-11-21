@@ -66,6 +66,15 @@ final class TypedCodec<T> {
   /// Decodes one datum of the writer schema.
   T decode(Uint8List bytes) => type.fromAvro(avro.decode(bytes));
 
+  /// Encodes [value] with the type's schema in Avro's JSON encoding, as
+  /// [AvroCodec.encodeJson] does.
+  String encodeJson(T value, {String? indent}) =>
+      _encoder.encodeJson(type.toAvro(value), indent: indent);
+
+  /// Decodes one datum of the writer schema in Avro's JSON encoding, as
+  /// [AvroCodec.decodeJson] does.
+  T decodeJson(String json) => type.fromAvro(avro.decodeJson(json));
+
   /// Encodes [value] in single-object encoding, with the fingerprint of the type's schema.
   Uint8List encodeSingleObject(T value) =>
       _encoder.encodeSingleObject(type.toAvro(value));

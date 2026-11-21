@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'binary.dart';
 import 'exceptions.dart';
 import 'fingerprint.dart';
+import 'json.dart';
 import 'limits.dart';
 import 'logical.dart';
 import 'resolve.dart';
@@ -74,6 +75,25 @@ final class AvroCodec {
     }
     return value;
   }
+
+  /// Encodes [value] with the writer schema in Avro's JSON encoding: compact, or indented
+  /// with [indent], such as two spaces.
+  ///
+  /// A union value is written as `null` or as `{"<branch>": value}`, the branch named by its
+  /// full name or its type name; `bytes` and `fixed` as strings of the code points 0 to 255,
+  /// logical types as their underlying type, and `NaN` and the infinities as the strings
+  /// `"NaN"`, `"Infinity"` and `"-Infinity"`. Throws [EncodeException] as [encode] does.
+  String encodeJson(Object? value, {String? indent}) =>
+      encodeJsonWith(this, value, indent);
+
+  /// Decodes one datum of the writer schema in Avro's JSON encoding, read as the reader
+  /// schema as [decode] reads it.
+  ///
+  /// A union branch may also be named by the simple name of a named type when no other
+  /// branch has that name. Throws [DecodeException], with offset 0 and the path of the
+  /// value, if [json] is not JSON or not a value of the writer schema: a record must have
+  /// exactly its fields, an `int` must fit 32 bits.
+  Object? decodeJson(String json) => decodeJsonWith(this, json);
 }
 
 /// The header of a datum in single-object encoding: the marker `C3 01` and the writer

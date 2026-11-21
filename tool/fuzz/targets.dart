@@ -1,7 +1,8 @@
-// The fuzz targets: the two entry points that take untrusted bytes, AvroCodec.decode (with
-// single-object encoding) and AvroFileReader with its records. Any input must either decode
-// or throw an AvroException.
+// The fuzz targets: the entry points that take untrusted input, AvroCodec.decode (with
+// single-object encoding), AvroCodec.decodeJson and AvroFileReader with its records. Any
+// input must either decode or throw an AvroException.
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -66,10 +67,12 @@ FuzzFailure? fuzzOne(Uint8List input, List<AvroCodec> codecs) {
     return null;
   }
 
+  final text = utf8.decode(input, allowMalformed: true);
   for (final codec in codecs) {
     final failure =
         run('decode ${codec.writer.type}', () => codec.decode(input)) ??
-        run('decodeSingleObject', () => codec.decodeSingleObject(input));
+        run('decodeSingleObject', () => codec.decodeSingleObject(input)) ??
+        run('decodeJson ${codec.writer.type}', () => codec.decodeJson(text));
     if (failure != null) return failure;
   }
   return run(
@@ -151,6 +154,21 @@ List<Uint8List> fuzzSeeds(List<AvroCodec> codecs) {
       {'a': null, 'b': 'x', 'c': Uint8List(3)},
     ]),
     Uint8List.fromList(File('test/data/apache/interop.avsc').readAsBytesSync()),
+    for (final json in [
+      logical.encodeJson(logicalValue),
+      list.encodeJson({
+        'v': 1,
+        'next': {'v': -2, 'next': null},
+      }),
+      codecs[3].encodeJson([
+        {
+          'a': null,
+          'b': 'x',
+          'c': Uint8List.fromList([0, 255]),
+        },
+      ]),
+    ])
+      Uint8List.fromList(utf8.encode(json)),
   ];
 }
 

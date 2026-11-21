@@ -42,7 +42,16 @@ sealed class Schema {
       }
     }
     final maxDepth = limits.maxSchemaDepth;
-    if (maxDepth != null) _checkDepth(jsonText, maxDepth);
+    if (maxDepth != null) {
+      checkJsonNesting(
+        jsonText,
+        maxDepth,
+        () => throw LimitExceededException(
+          'the schema is nested deeper than $maxDepth',
+          limit: 'maxSchemaDepth',
+        ),
+      );
+    }
     final Object? decoded;
     try {
       decoded = jsonDecode(jsonText);
@@ -278,8 +287,9 @@ Map<String, Object?> _propsOf(Map<String, Object?> object, Set<String> keys) =>
 final _namePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
 
 /// Counts the nesting of brackets and braces outside strings, before decoding, so that a
-/// deeply nested text cannot exhaust the stack of the JSON decoder.
-void _checkDepth(String text, int maxDepth) {
+/// deeply nested text cannot exhaust the stack of the JSON decoder. Calls [fail] when the
+/// nesting exceeds [maxDepth].
+void checkJsonNesting(String text, int maxDepth, Never Function() fail) {
   var depth = 0;
   var inString = false;
   for (var i = 0; i < text.length; i++) {
@@ -294,12 +304,7 @@ void _checkDepth(String text, int maxDepth) {
       inString = true;
     } else if (c == 0x5b || c == 0x7b) {
       depth++;
-      if (depth > maxDepth) {
-        throw LimitExceededException(
-          'the schema is nested deeper than $maxDepth',
-          limit: 'maxSchemaDepth',
-        );
-      }
+      if (depth > maxDepth) fail();
     } else if (c == 0x5d || c == 0x7d) {
       depth--;
     }
