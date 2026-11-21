@@ -175,7 +175,18 @@ final class AvroFileReader {
         }
       }
       for (var i = 0; i < count; i++) {
-        yield decodeFrom(c, blockInput);
+        final Object? record;
+        try {
+          record = decodeFrom(c, blockInput);
+        } on DecodeException catch (e) {
+          throw DecodeException(
+            e.message,
+            offset: e.offset,
+            path: e.path,
+            blockOffset: start,
+          );
+        }
+        yield record;
       }
       if (blockInput.remaining != 0) {
         input.fail(

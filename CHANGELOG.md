@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.2.0]
 
+### Added
+
+- `DecodeException.blockOffset` says where in a container file the block of a failing record starts; `offset` counts inside the decompressed block.
+
 ### Changed
 
 - `AvroFileReader.records(codec)` rejects a codec whose writer schema is not the file's, with `DecodeException` naming both fingerprints, before it decodes a record.

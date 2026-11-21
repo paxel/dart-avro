@@ -120,7 +120,33 @@ void main() {
     expect(it.moveNext() && it.current == 1, isTrue);
     expect(it.moveNext() && it.current == 2, isTrue);
     expect(it.moveNext() && it.current == 3, isTrue);
-    expect(it.moveNext, throwsA(isA<DecodeException>()));
+    expect(
+      it.moveNext,
+      throwsA(
+        isA<DecodeException>()
+            .having(
+              (e) => e.blockOffset,
+              'blockOffset',
+              bytes.length - 16 - 1 - 2,
+            )
+            .having((e) => e.offset, 'offset', 1)
+            .having(
+              (e) => e.toString(),
+              'toString',
+              contains('of the block at byte'),
+            ),
+      ),
+    );
+  });
+
+  test('a decode error outside a container file has no block offset', () {
+    try {
+      AvroCodec(writer: Schema.parse('"int"'))
+          .decode(Uint8List.fromList([0x80]));
+      fail('no exception');
+    } on DecodeException catch (e) {
+      expect(e.blockOffset, isNull);
+    }
   });
 
   test('an absent avro.codec means null; another compression is rejected', () {

@@ -21,7 +21,7 @@
   <tbody>
     <tr><td><code>SchemaParseException</code></td>            <td><code>String? path</code></td>                           <td><code>SchemaParseException at Memo.fields[1].type: …</code>, or without <code>at</code> when <code>path</code> is <code>null</code></td></tr>
     <tr><td><code>ResolutionException</code></td>             <td><code>String path</code></td>                            <td><code>ResolutionException at Memo.written: …</code></td></tr>
-    <tr><td><code>DecodeException</code></td>                 <td><code>int offset</code>, <code>String? path</code></td>  <td><code>DecodeException at byte 12 ($.at): …</code>, or without the path</td></tr>
+    <tr><td><code>DecodeException</code></td>                 <td><code>int offset</code>, <code>String? path</code>, <code>int? blockOffset</code></td>  <td><code>DecodeException at byte 12 ($.at): …</code>, or without the path</td></tr>
     <tr><td><code>EncodeException</code></td>                 <td><code>String path</code></td>                            <td><code>EncodeException at $.written.year: …</code></td></tr>
     <tr><td><code>LimitExceededException</code></td>          <td><code>String limit</code></td>                           <td><code>LimitExceededException: …</code></td></tr>
     <tr><td><code>UnsupportedCompressionException</code></td> <td><code>String compression</code></td>                     <td><code>UnsupportedCompressionException: …</code></td></tr>
@@ -52,6 +52,7 @@
   <li>Thrown by the <code>AvroFileReader</code> constructor: no magic, a malformed header, no <code>avro.schema</code>, or <code>avro.schema</code> or <code>avro.codec</code> that is not UTF-8.</li>
   <li>Thrown while iterating <code>AvroFileReader.records</code>: a malformed block, a sync marker that does not match, data that is not valid DEFLATE, a record count the block cannot hold, bytes left after the records.</li>
   <li><code>offset</code>: the byte where decoding failed, from the start of the bytes decoded; for the records of a container file, from the start of the decompressed block.</li>
+  <li><code>blockOffset</code>: for the records of a container file, the file offset at which the record's block starts; <code>toString</code> then reads <code>DecodeException at byte 1 of the block at byte 79: …</code>. Null outside container files.</li>
   <li><code>path</code>: the place in the value when a logical type cannot be read, such as a <code>timestamp-millis</code> beyond <code>DateTime</code> or a <code>uuid</code> string that is not a UUID; otherwise <code>null</code>.</li>
 </ul>
 
