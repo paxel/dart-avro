@@ -102,7 +102,7 @@ void main() {
     final s = Schema.parse(
       '{"type": "record", "name": "R", "namespace": "n", "doc": "d", "x": 1, '
       '"fields": [{"name": "u", "type": {"type": "string", "logicalType": "uuid"}, '
-      '"default": "", "doc": "d", "order": "ignore"}]}',
+      '"default": "123e4567-e89b-12d3-a456-426614174000", "doc": "d", "order": "ignore"}]}',
     );
     expect(
       s.canonicalForm,
