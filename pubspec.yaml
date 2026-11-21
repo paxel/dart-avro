@@ -2,7 +2,7 @@ name: avro
 description: >-
   A pure-Dart implementation of Apache Avro 1.12: schemas, binary and single-object encoding,
   schema resolution, fingerprints and object container files.
-version: 0.1.0
+version: 0.1.1
 repository: https://github.com/paxel/dart-avro
 issue_tracker: https://github.com/paxel/dart-avro/issues
 documentation: https://paxel.github.io/dart-avro/
