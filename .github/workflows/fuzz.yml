@@ -1,0 +1,28 @@
+name: Fuzz
+
+# Mutation fuzzing of the decoder and the container file reader, weekly and by hand
+# (avro-1010). The shared fuzz workflow of paxel/gates has no Dart stack, so the targets run
+# here with tool/fuzz/fuzz.dart.
+on:
+  schedule:
+    - cron: "29 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: decode and AvroFileReader
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@2286a0c042b44434fe26d292bbce8d34f7ec662b # v1.8.2
+        with:
+          sdk: 3.14.0
+      - run: dart pub get --enforce-lockfile
+      - name: Fuzz for ten minutes
+        run: dart run tool/fuzz/fuzz.dart 600
