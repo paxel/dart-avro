@@ -43,7 +43,6 @@
 <h2>Behaviour worth knowing</h2>
 <ul>
   <li>A union default is the value of the first branch it fits.</li>
-  <li>A writer schema read as a reader union takes the first reader branch it matches, with promotions counted as matches: an <code>int</code> read as <code>["double", "long"]</code> becomes a <code>double</code>.</li>
   <li>Named types match by their name without the namespace, or by the reader's aliases.</li>
   <li>A logical type that the package does not know, or that is invalid, is read as its underlying type.</li>
   <li><code>encode</code> does not fill in defaults; every record field must be given.</li>

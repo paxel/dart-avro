@@ -209,6 +209,28 @@ void main() {
       expect(readAs('"float"', '["null", "double"]', 1.5), 1.5);
     });
 
+    test("a reader union takes Java's branch: same type, then a promotion", () {
+      expect(readAs('"int"', '["null", "double", "long", "int"]', 5), 5);
+      expect(readAs('"int"', '["null", "double", "long"]', 5), 5.0);
+      expect(readAs('"long"', '["null", "double", "long"]', 5), 5);
+      expect(readAs('"string"', '["bytes", "string"]', 'a'), 'a');
+    });
+
+    test('a reader union prefers the same full name, then a resolving record', () {
+      const w =
+          '{"type": "record", "name": "a.R", "fields": [{"name": "x", "type": "int"}]}';
+      const twoRecords = '''
+[{"type": "record", "name": "b.R", "fields": [{"name": "y", "type": "int"}]},
+ {"type": "record", "name": "c.R", "fields": [{"name": "x", "type": "long"}]},
+ {"type": "record", "name": "a.R", "fields": [{"name": "x", "type": "int"},
+   {"name": "z", "type": "int", "default": 9}]}]''';
+      expect(readAs(w, twoRecords, {'x': 1}), {'x': 1, 'z': 9});
+      const noFullName = '''
+[{"type": "record", "name": "b.R", "fields": [{"name": "y", "type": "int"}]},
+ {"type": "record", "name": "c.R", "fields": [{"name": "x", "type": "long"}]}]''';
+      expect(readAs(w, noFullName, {'x': 1}), {'x': 1});
+    });
+
     test('union to union', () {
       expect(readAs('["null", "int"]', '["long", "null"]', null), isNull);
       expect(readAs('["null", "int"]', '["long", "null"]', 9), 9);
