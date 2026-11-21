@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `TypedCodec<T>` encodes and decodes Dart classes described by an `AvroType<T>` (the schema text, `toAvro` and `fromAvro`), with the resolution and single-object encoding of `AvroCodec`.
 - `DecodeException.blockOffset` says where in a container file the block of a failing record starts; `offset` counts inside the decompressed block.
 
 ### Changed
