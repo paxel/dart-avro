@@ -31,7 +31,7 @@ jobs:
 
   gate:
     needs: version
-    uses: paxel/gates/.github/workflows/release-gate.yml@02a81ad45b815cbed94f9bb6841424a624e8155f # v1.2.0
+    uses: paxel/gates/.github/workflows/release-gate.yml@ccb900ba534004ed8bb410f1f48c4097d9a9f530 # v1.3.0
     permissions:
       contents: read
       security-events: read
@@ -60,7 +60,7 @@ jobs:
 
   provenance:
     needs: build
-    uses: paxel/gates/.github/workflows/provenance.yml@02a81ad45b815cbed94f9bb6841424a624e8155f # v1.2.0
+    uses: paxel/gates/.github/workflows/provenance.yml@ccb900ba534004ed8bb410f1f48c4097d9a9f530 # v1.3.0
     permissions:
       contents: read
       id-token: write
@@ -98,9 +98,10 @@ jobs:
           body_path: notes.md
           files: dist/*
 
-  pub:
+  pub-dev:
     needs: publish
     permissions:
+      contents: read
       id-token: write # pub.dev authenticates the tag push through OIDC
     uses: dart-lang/setup-dart/.github/workflows/publish.yml@2286a0c042b44434fe26d292bbce8d34f7ec662b # v1.8.2
     with:
