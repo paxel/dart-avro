@@ -2,7 +2,7 @@
 /// fingerprints and object container files.
 library;
 
-export 'src/container.dart' show AvroFileHeader, AvroFileReader;
+export 'src/container.dart' show AvroFileHeader, AvroFileReader, AvroFileWriter;
 export 'src/codec.dart'
     show AvroCodec, Branch, SingleObjectEncoding, SingleObjectHeader;
 export 'src/exceptions.dart';
