@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -10,6 +11,8 @@ import 'logical.dart';
 import 'platform.dart';
 import 'resolve.dart';
 import 'schema.dart';
+
+part 'codec_plan.dart';
 
 /// A value of a union, with the branch it belongs to named explicitly.
 ///
@@ -74,14 +77,28 @@ final class AvroCodec {
   /// How data of the writer schema is read as the reader schema; null when they are one.
   final Plan? _plan;
 
+  /// The compiled encoder of the writer schema, compiled at its first use.
+  late final _Enc _encoder = _EncoderCompiler(limits).compile(writer);
+
+  /// The compiled decoder of the writer schema, compiled at its first use.
+  late final _Dec _decoder = _DecoderCompiler(
+    limits,
+    decodeBranches,
+  ).compile(writer);
+
   /// Encodes [value] with the writer schema.
   ///
   /// Throws [EncodeException] if the value does not fit the schema.
   Uint8List encode(Object? value) {
-    final out = BinaryWriter();
+    final out = BinaryWriter(_sizeHint);
     encodeInto(this, out, value);
-    return out.toBytes();
+    // Capped, so that one large value does not make every later buffer large.
+    _sizeHint = out.length > 1 << 20 ? 64 : out.length;
+    return out.takeBytes();
   }
+
+  /// The size of the last encoding, the first guess at the size of the next.
+  int _sizeHint = 64;
 
   /// Decodes one datum. Throws [DecodeException] if the bytes are not a valid encoding or if
   /// bytes are left over after the datum.
@@ -210,13 +227,34 @@ extension SingleObjectEncoding on AvroCodec {
 }
 
 /// Encodes [value] with [codec] into [out]; for this package's own framing.
-void encodeInto(AvroCodec codec, BinaryWriter out, Object? value) =>
-    _Encoder(out, codec.limits).encode(codec.writer, value, r'$', 0);
+///
+/// The compiled encoder runs first; if it gives up, what it wrote is dropped and the tree walk
+/// encodes the value again, to throw what is wrong with it.
+void encodeInto(AvroCodec codec, BinaryWriter out, Object? value) {
+  final start = out.length;
+  try {
+    codec._encoder(out, value, 0);
+    return;
+  } on Object {
+    out.truncate(start);
+  }
+  _Encoder(out, codec.limits).encode(codec.writer, value, r'$', 0);
+}
 
 /// Decodes one datum with [codec] from [input]; for this package's own framing.
 Object? decodeFrom(AvroCodec codec, BinaryReader input) {
-  final decoder = _Decoder(input, codec.limits, codec.decodeBranches);
   final plan = codec._plan;
+  if (plan == null) {
+    // The compiled decoder first; if it gives up, the tree walk decodes the datum again, to
+    // throw what is wrong with it.
+    final start = input.offset;
+    try {
+      return codec._decoder(input, 0);
+    } on Object {
+      input.rewind(start);
+    }
+  }
+  final decoder = _Decoder(input, codec.limits, codec.decodeBranches);
   if (plan == null) return decoder.decode(codec.writer, r'$', 0);
   return runPlan(
     plan,

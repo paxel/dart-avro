@@ -1,7 +1,7 @@
 # Benchmarks
 
-The baseline of the benchmark suite of [avro-1036](https://github.com/paxel/dart-avro/issues/41)
-(ADR 11): the package on the Dart AOT build, next to Apache Avro for Java (generic reader and
+The benchmark suite of [avro-1036](https://github.com/paxel/dart-avro/issues/41) (ADR 11): the
+package on the Dart AOT build, next to Apache Avro for Java (generic reader and
 writer, warmed up) and fastavro, on the same schemas and the same values. The target of
 [avro-1037](https://github.com/paxel/dart-avro/issues/42) is binary encode and decode of records
 within 2× of Java.
@@ -17,7 +17,7 @@ within 2× of Java.
 | Java           | GraalVM CE 21.0.2+13.1 (Graal JIT, not stock HotSpot), Maven 3.9.16              |
 | Apache Avro    | 1.12.1, with jackson 2.21.7, snappy-java 1.1.10.9 and zstd-jni 1.5.7-4           |
 | fastavro       | 1.13.1 (its Cython modules), Python 3.13.5, cramjam 2.14.0, backports.zstd 1.8.0 |
-| Package        | `avro` 0.4.0 at 6c79f24, before the plan of avro-1037                            |
+| Package        | `avro` 0.4.0 at 6c79f24 (before) and with avro-1037 (after)                      |
 
 Each program ran once, alone, under `nice -n 19`, on 2026-11-22.
 
@@ -100,41 +100,50 @@ How each side measures:
 
 ## Results
 
-µs per operation, lower is better. `Dart ÷ Java` is how many times longer the Dart operation
-takes. The 2× target of [avro-1037](https://github.com/paxel/dart-avro/issues/42) is on binary
-`encode` and `decode` of the three record workloads.
+µs per operation, lower is better. `Dart before` is the package at 6c79f24, `Dart after` with
+the compiled codec of [avro-1037](https://github.com/paxel/dart-avro/issues/42); both against
+the same Java and fastavro runs. `÷ Java` is how many times longer the Dart operation takes. The
+2× target of avro-1037 is on binary `encode` and `decode` of the three record workloads.
 
-| Case                    | Dart µs/op | Java µs/op | fastavro µs/op | Dart ÷ Java | 2× target |
-|-------------------------|-----------:|-----------:|---------------:|------------:|-----------|
-| `interop/encode`        |      5.187 |      0.547 |         11.537 |        9.5× | not met   |
-| `interop/decode`        |      4.504 |      0.438 |          7.499 |       10.3× | not met   |
-| `interop/resolve`       |      5.973 |      0.512 |         20.260 |       11.7× |           |
-| `envelope/encode`       |      3.401 |      0.235 |         10.807 |       14.4× | not met   |
-| `envelope/decode`       |      2.269 |      0.186 |          4.642 |       12.2× | not met   |
-| `envelope/resolve`      |      2.985 |      0.193 |         11.534 |       15.5× |           |
-| `wide/encode`           |     16.062 |      1.188 |         24.765 |       13.5× | not met   |
-| `wide/decode`           |      9.809 |      0.971 |         16.830 |       10.1× | not met   |
-| `wide/resolve`          |     14.755 |      0.992 |         42.432 |       14.9× |           |
-| `longs/encode`          |      1,381 |        127 |          2,229 |       10.9× |           |
-| `longs/decode`          |      1,541 |        130 |          2,453 |       11.8× |           |
-| `longs/resolve`         |      1,833 |        115 |          5,243 |       15.9× |           |
-| `json/interop/encode`   |     13.636 |      3.359 |            n/a |        4.1× |           |
-| `json/interop/decode`   |     14.744 |      4.854 |            n/a |        3.0× |           |
-| `json/wide/encode`      |     38.077 |      5.811 |            279 |        6.6× |           |
-| `json/wide/decode`      |     35.350 |      9.970 |            220 |        3.5× |           |
-| `file/null/write`       |     16,563 |      1,970 |         24,932 |        8.4× |           |
-| `file/null/read`        |     10,469 |      1,128 |         17,373 |        9.3× |           |
-| `file/deflate/write`    |     19,312 |      4,879 |         28,384 |        4.0× |           |
-| `file/deflate/read`     |     11,341 |      1,621 |         17,689 |        7.0× |           |
-| `file/snappy/write`     |     17,997 |      2,065 |         25,221 |        8.7× |           |
-| `file/snappy/read`      |     12,159 |      1,254 |         17,600 |        9.7× |           |
-| `file/zstandard/write`  |     19,316 |      2,469 |         31,533 |        7.8× |           |
-| `file/zstandard/read`   |     10,988 |      1,405 |         21,059 |        7.8× |           |
-| `typed/envelope/encode` |      4.392 |        n/a |            n/a |         n/a |           |
-| `typed/envelope/decode` |      3.046 |        n/a |            n/a |         n/a |           |
+| Case                    | Dart before | Dart after |  Java | fastavro | Before ÷ Java | After ÷ Java | 2× target |
+|-------------------------|------------:|-----------:|------:|---------:|--------------:|-------------:|-----------|
+| `interop/encode`        |       5.187 |      1.026 | 0.547 |   11.537 |          9.5× |        1.88× | met       |
+| `interop/decode`        |       4.504 |      0.695 | 0.438 |    7.499 |         10.3× |        1.58× | met       |
+| `interop/resolve`       |       5.973 |      6.504 | 0.512 |   20.260 |         11.7× |       12.71× |           |
+| `envelope/encode`       |       3.401 |      0.327 | 0.235 |   10.807 |         14.4× |        1.39× | met       |
+| `envelope/decode`       |       2.269 |      0.326 | 0.186 |    4.642 |         12.2× |        1.75× | met       |
+| `envelope/resolve`      |       2.985 |      2.454 | 0.193 |   11.534 |         15.5× |       12.70× |           |
+| `wide/encode`           |      16.062 |      1.860 | 1.188 |   24.765 |         13.5× |        1.57× | met       |
+| `wide/decode`           |       9.809 |      1.172 | 0.971 |   16.830 |         10.1× |        1.21× | met       |
+| `wide/resolve`          |      14.755 |     15.611 | 0.992 |   42.432 |         14.9× |       15.74× |           |
+| `longs/encode`          |       1,381 |        191 |   127 |    2,229 |         10.9× |        1.51× |           |
+| `longs/decode`          |       1,541 |        250 |   130 |    2,453 |         11.8× |        1.92× |           |
+| `longs/resolve`         |       1,833 |      1,792 |   115 |    5,243 |         15.9× |       15.56× |           |
+| `json/interop/encode`   |      13.636 |      9.680 | 3.359 |      n/a |          4.1× |        2.88× |           |
+| `json/interop/decode`   |      14.744 |     11.330 | 4.854 |      n/a |          3.0× |        2.33× |           |
+| `json/wide/encode`      |      38.077 |     24.826 | 5.811 |      279 |          6.6× |        4.27× |           |
+| `json/wide/decode`      |      35.350 |     26.841 | 9.970 |      220 |          3.5× |        2.69× |           |
+| `file/null/write`       |      16,563 |      2,371 | 1,970 |   24,932 |          8.4× |        1.20× |           |
+| `file/null/read`        |      10,469 |      1,417 | 1,128 |   17,373 |          9.3× |        1.26× |           |
+| `file/deflate/write`    |      19,312 |      6,140 | 4,879 |   28,384 |          4.0× |        1.26× |           |
+| `file/deflate/read`     |      11,341 |      2,531 | 1,621 |   17,689 |          7.0× |        1.56× |           |
+| `file/snappy/write`     |      17,997 |      6,292 | 2,065 |   25,221 |          8.7× |        3.05× |           |
+| `file/snappy/read`      |      12,159 |      3,918 | 1,254 |   17,600 |          9.7× |        3.12× |           |
+| `file/zstandard/write`  |      19,316 |      5,215 | 2,469 |   31,533 |          7.8× |        2.11× |           |
+| `file/zstandard/read`   |      10,988 |      1,934 | 1,405 |   21,059 |          7.8× |        1.38× |           |
+| `typed/envelope/encode` |       4.392 |      0.876 |   n/a |      n/a |           n/a |          n/a |           |
+| `typed/envelope/decode` |       3.046 |      0.505 |   n/a |      n/a |           n/a |          n/a |           |
 
-Before [avro-1037](https://github.com/paxel/dart-avro/issues/42), binary record encode and
-decode take 9.5× to 14.4× as long as Java's, and are faster than fastavro's in every case. The
-`longs` workload, about 140 ns per element, shows the cost per value most plainly. The Java
-numbers vary between runs by up to 2× in single cases (`wide/resolve` took 1.0 µs in this run
-and 2.2 µs in an earlier one); the table is one run.
+- **Before:** binary record encode and decode took 9.5× to 14.4× as long as Java's. The codec
+  walked the schema for every value and built the path of every value as a string, for its
+  error messages, even when nothing failed; `longs` took about 140 ns per element.
+- **After:** they take 1.2× to 1.9× as long as Java's, 5 to 10 times as fast as before. The
+  codec compiles the writer schema into closures once, builds no path unless something fails
+  (then the tree walk runs again, for the exact error), decodes a record into a map backed by a
+  list, and encodes strings and UUIDs straight into its buffer.
+- **Unchanged:** resolving decode (`resolve`) still runs the resolution plan with the tree walk,
+  so it is no faster; it is outside the target. JSON and container files are faster because
+  they use the binary codec underneath.
+- **Margin:** the closest case is `interop/encode` at 1.88×. Runs of the same build differ by
+  about 10% between processes, on the Java side up to 2× in single cases (`wide/resolve` took
+  1.0 µs in the Java run of this table and 2.2 µs in an earlier one). Each column is one run.

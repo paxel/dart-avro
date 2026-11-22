@@ -320,14 +320,26 @@ bool _decimalValid(Schema s) {
   return true;
 }
 
-final _uuidPattern = RegExp(
-  r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
-);
+/// Whether [value] is a UUID in its text form: 8-4-4-4-12 hexadecimal digits of either case.
+bool isUuid(String value) {
+  if (value.length != 36) return false;
+  for (var i = 0; i < 36; i++) {
+    final c = value.codeUnitAt(i);
+    if (i == 8 || i == 13 || i == 18 || i == 23) {
+      if (c != 0x2d) return false;
+    } else if (!((c >= 0x30 && c <= 0x39) ||
+        (c >= 0x41 && c <= 0x46) ||
+        (c >= 0x61 && c <= 0x66))) {
+      return false;
+    }
+  }
+  return true;
+}
 
 /// Whether [value] is a Dart value of the logical type [l].
 bool fitsLogical(Logical l, Object? value) => switch (l) {
   Logical.decimal || Logical.bigDecimal => value is AvroDecimal,
-  Logical.uuid => value is String && _uuidPattern.hasMatch(value),
+  Logical.uuid => value is String && isUuid(value),
   Logical.date => value is AvroDate,
   Logical.timeMillis || Logical.timeMicros => value is Duration,
   Logical.timestampMillis || Logical.timestampMicros => value is DateTime,
@@ -476,7 +488,7 @@ Object? fromUnderlying(
       return AvroDecimal(unscaled, scale);
     case Logical.uuid:
       if (value is String) {
-        if (!_uuidPattern.hasMatch(value)) fail('"$value" is not a UUID');
+        if (!isUuid(value)) fail('"$value" is not a UUID');
         return value.toLowerCase();
       }
       final hex = [
