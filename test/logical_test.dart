@@ -1,3 +1,6 @@
+@Tags(['web'])
+library;
+
 import 'dart:typed_data';
 
 import 'package:avro/avro.dart';

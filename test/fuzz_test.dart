@@ -1,3 +1,7 @@
+// Needs dart:io, or test data read from files: not one of the web tests.
+@TestOn('vm')
+library;
+
 import 'dart:math';
 
 import 'package:test/test.dart';

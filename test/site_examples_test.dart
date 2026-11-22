@@ -1,3 +1,7 @@
+// Needs dart:io, or test data read from files: not one of the web tests.
+@TestOn('vm')
+library;
+
 // Runs every Dart example of the documentation site (avro-1012), so that no page shows code
 // that does not compile, does not run, or prints something else than the page says.
 //

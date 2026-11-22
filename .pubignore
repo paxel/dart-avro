@@ -36,3 +36,7 @@ test/site_examples_test.dart
 test/axt_types_test.dart
 test/data/axt/types/
 test/data/axt/axt_types.g.dart
+test/web/
+test/support/
+test/web_test_data_test.dart
+dart_test.yaml

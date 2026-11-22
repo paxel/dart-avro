@@ -1,3 +1,6 @@
+@Tags(['web'])
+library;
+
 import 'package:avro/src/platform.dart';
 import 'package:test/test.dart';
 
