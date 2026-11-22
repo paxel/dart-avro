@@ -12,7 +12,7 @@
 
 # avro
 
-A pure-Dart implementation of [Apache Avro 1.12](https://avro.apache.org/docs/1.12.0/specification/) for the Dart VM and AOT: Android, iOS and desktop. Flutter web is not supported.
+A pure-Dart implementation of [Apache Avro 1.12](https://avro.apache.org/docs/1.12.0/specification/) for the Dart VM and AOT: Android, iOS and desktop; and for the web when compiled with dart2wasm (`flutter build web --wasm`). Compiled with dart2js, where an `int` is not 64-bit, its codecs throw `UnsupportedError`.
 
 ## Documentation
 
@@ -24,11 +24,13 @@ A pure-Dart implementation of [Apache Avro 1.12](https://avro.apache.org/docs/1.
 - Every primitive, complex and logical type of Avro 1.12.
 - Binary encoding, single-object encoding and JSON encoding.
 - Schema parsing and schema resolution between a writer and a reader schema.
+- A schema compatibility check without data, `checkCompatibility`, with every incompatibility and its place in both schemas.
+- The Avro sort order: `compare` of two values and `compareBytes` of two encodings without decoding them.
 - Parsing Canonical Form, with the fingerprints CRC-64-AVRO, MD5 and SHA-256.
 - Object container files, read and write, in memory or as streams, compressed with `null`, `deflate`, `snappy`, `bzip2`, `xz` or `zstandard`.
 - Typed Dart classes generated from `.avsc` files with `dart run avro:generate` or the library `package:avro/generate.dart`, with a sealed class for each union of two or more non-null branches, encoded and decoded with `TypedCodec`.
 
-Not covered: the Avro IPC/RPC protocol.
+Not covered: the Avro IPC/RPC protocol, and the web compiled with dart2js.
 
 ## Licence
 

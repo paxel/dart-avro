@@ -15,7 +15,7 @@
   </thead>
   <tbody>
     <tr><td><code>null</code></td>     <td>yes</td> <td>yes</td>  <td>No compression; the default of the writers</td></tr>
-    <tr><td><code>deflate</code></td>  <td>yes</td> <td>yes</td>  <td>Raw DEFLATE, as the specification says, through <code>dart:io</code></td></tr>
+    <tr><td><code>deflate</code></td>  <td>yes</td> <td>yes</td>  <td>Raw DEFLATE, as the specification says, through <code>dart:io</code> on the VM and AOT, and through <code>archive</code> on the web</td></tr>
     <tr><td><code>snappy</code></td>   <td>yes</td> <td>yes</td>  <td>Snappy, implemented in this package, with the big-endian CRC32 of the uncompressed block after it, checked on reading</td></tr>
     <tr><td><code>bzip2</code></td>    <td>yes</td> <td>yes</td>  <td>Through the package <code>archive</code></td></tr>
     <tr><td><code>xz</code></td>       <td>yes</td> <td>yes</td>  <td>Through <code>archive</code>; written stored, without being compressed</td></tr>

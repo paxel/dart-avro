@@ -1,0 +1,195 @@
+<!-- page: title="Sort order" track="guide" order=13 summary="Compare two values with AvroCodec.compare, two encodings without decoding them with compareBytes, and typed values with TypedCodec.compare, by the Avro sort order: fields in their order (ascending, descending, ignore), unions by branch, enums by symbol index, strings and bytes as unsigned bytes, floats as float32, NaN last as in Java, logical values as their encoding, and maps, which throw ArgumentError." -->
+<p class="lede">
+  The Avro specification gives every schema but a map an order, the same in every language, so
+  that data sorted by Java sorts the same in Dart. The codec compares two values by it, or two
+  encodings without decoding them.
+</p>
+
+<h2>Comparing values and encodings</h2>
+<ul>
+  <li><code>codec.compare(a, b)</code> compares two values of the writer schema, as <code>encode</code> takes them, and returns -1, 0 or 1. It suits <code>List.sort</code> as it is.</li>
+  <li><code>codec.compareBytes(a, b)</code> compares two encodings of the writer schema, and gives the same result as <code>compare</code> on the values they hold. It reads both side by side only as far as the first difference, and decodes nothing into Dart values.</li>
+  <li><code>TypedCodec.compare(a, b)</code> compares two values of a generated class, as <code>compare</code> compares their generic values.</li>
+</ul>
+<p>
+  A record compares field by field, in the order of its fields, and each field's
+  <code>order</code> says how: <code>ascending</code>, the default; <code>descending</code>, which
+  turns the field's result around; or <code>ignore</code>, whose values are not looked at, so two
+  records that differ only there are equal.
+</p>
+<pre data-example="guide/sort-order-records"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final codec = AvroCodec(writer: Schema.parse('''
+  {"type": "record", "name": "Score", "fields": [
+    {"name": "player", "type": "string"},
+    {"name": "points", "type": "int", "order": "descending"},
+    {"name": "note", "type": "string", "order": "ignore"}
+  ]}
+  '''));
+  final scores = [
+    {'player': 'bob', 'points': 7, 'note': 'late'},
+    {'player': 'ada', 'points': 3, 'note': ''},
+    {'player': 'ada', 'points': 9, 'note': 'best'},
+  ];
+
+  scores.sort(codec.compare);
+  for (final s in scores) {
+    print(s);
+  }
+
+  // The note is ignored: these two are equal.
+  print(codec.compare(
+    {'player': 'ada', 'points': 9, 'note': 'best'},
+    {'player': 'ada', 'points': 9, 'note': 'other'},
+  ));
+
+  // The same order on the encodings, without decoding them.
+  final a = codec.encode(scores[0]);
+  final b = codec.encode(scores[1]);
+  print(codec.compareBytes(a, b));
+  print(codec.compareBytes(b, a));
+}</code></pre>
+<pre data-example-output="guide/sort-order-records"><code>{player: ada, points: 9, note: best}
+{player: ada, points: 3, note: }
+{player: bob, points: 7, note: late}
+0
+-1
+1</code></pre>
+<p>
+  The values are those of the writer schema: what <code>decode</code> returns for another reader
+  schema is not, and is compared with a codec of that schema. A value that does not fit the
+  schema throws <code>EncodeException</code> from <code>compare</code>, as <code>encode</code>
+  would; bytes that are not a valid encoding throw <code>DecodeException</code> from
+  <code>compareBytes</code>, as far as it reads them. Bytes after the first difference, and after
+  the datums, are not checked.
+</p>
+
+<h2>The rules</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Schema</th>                       <th>Order</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>null</code></td>              <td>All equal</td></tr>
+    <tr><td><code>boolean</code></td>           <td><code>false</code> before <code>true</code></td></tr>
+    <tr><td><code>int</code>, <code>long</code>, <code>double</code></td><td>By value; <code>-0.0</code> before <code>0.0</code>, and <code>NaN</code> after every other number and equal to itself, as in Java</td></tr>
+    <tr><td><code>float</code></td>             <td>As <code>double</code>, but by the 32-bit value it encodes to: two doubles that round to the same <code>float</code> are equal</td></tr>
+    <tr><td><code>bytes</code>, <code>fixed</code></td><td>By their unsigned bytes; a shorter prefix first</td></tr>
+    <tr><td><code>string</code></td>            <td>By its UTF-8 bytes, unsigned: <code>Z</code> before <code>a</code>, <code>é</code> after <code>z</code></td></tr>
+    <tr><td><code>enum</code></td>              <td>By the index of the symbol in the schema, not by its name</td></tr>
+    <tr><td><code>array</code></td>             <td>Element by element, then a shorter array first</td></tr>
+    <tr><td><code>map</code></td>               <td>None: throws <code>ArgumentError</code></td></tr>
+    <tr><td><code>record</code></td>            <td>Field by field in the field's <code>order</code>: <code>ascending</code>, <code>descending</code> or <code>ignore</code></td></tr>
+    <tr><td>union</td>                          <td>By the index of the branch first, then by the value in that branch</td></tr>
+    <tr><td>logical type</td>                   <td>As the value of the underlying type it encodes to</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  The last rule is the specification's, and it does not always follow the number or the time.
+  A <code>decimal</code> compares by the bytes of its two's complement, so a negative decimal
+  comes after a positive one. A <code>duration</code> compares by its 12 bytes, months, days and
+  milliseconds each little-endian, so 256 ms comes before 1 ms. The timestamps, dates and times
+  are <code>int</code> and <code>long</code> values and compare in time order.
+</p>
+<pre data-example="guide/sort-order-rules"><code class="language-dart">import 'dart:typed_data';
+
+import 'package:avro/avro.dart';
+
+void main() {
+  int compare(String schema, Object? a, Object? b) =&gt;
+      AvroCodec(writer: Schema.parse(schema)).compare(a, b);
+
+  // A union: by the index of the branch first, then by value.
+  print(compare('["null", "string"]', null, 'a'));
+  print(compare('["string", "null"]', null, 'a'));
+
+  // Strings and bytes: as unsigned bytes, so 'Z' before 'a' and 'é' after 'z'.
+  print(compare('"string"', 'Z', 'a'));
+  print(compare('"string"', 'é', 'z'));
+  print(compare('"bytes"', Uint8List.fromList([1, 2]), Uint8List.fromList([1, 2, 0])));
+
+  // An enum: by the index of its symbol, not by its name.
+  print(compare('{"type": "enum", "name": "Size", "symbols": ["S", "M", "L"]}', 'L', 'M'));
+
+  // A float: as the 32-bit value it encodes to.
+  print(compare('"float"', 0.1, 0.10000000001));
+  print(compare('"double"', 0.1, 0.10000000001));
+
+  // NaN: after every other number and equal to itself, as in Java.
+  print(compare('"double"', double.nan, double.infinity));
+  print(compare('"double"', double.nan, double.nan));
+
+  // A decimal: by the bytes of its two's complement, so a negative one after a positive one.
+  const decimal = '{"type": "bytes", "logicalType": "decimal", "precision": 5, "scale": 2}';
+  print(compare(decimal, AvroDecimal(BigInt.from(-150), 2), AvroDecimal(BigInt.from(150), 2)));
+
+  // A duration: by its 12 bytes, months, days and milliseconds little-endian.
+  const duration = '{"type": "fixed", "name": "D", "size": 12, "logicalType": "duration"}';
+  print(compare(duration, AvroDuration(0, 0, 256), AvroDuration(0, 0, 1)));
+
+  // A map: no order.
+  try {
+    compare('{"type": "map", "values": "int"}', {'a': 1}, {'a': 1});
+  } on ArgumentError catch (e) {
+    print(e.message);
+  }
+}</code></pre>
+<pre data-example-output="guide/sort-order-rules"><code>-1
+1
+-1
+1
+-1
+1
+0
+-1
+1
+0
+1
+-1
+the map at $ cannot be compared: Avro gives maps no order</code></pre>
+<p>
+  A record with a map field can still be compared when that field is
+  <code>"order": "ignore"</code>, since its values are not looked at.
+</p>
+
+<h2>Generated classes</h2>
+<p>
+  <code>TypedCodec.compare</code> takes two values of a <a href="codegen.html">generated
+  class</a> and compares them by the sort order of its schema. With this
+  <code>score.avsc</code>:
+</p>
+<pre data-example-schema="guide/sort-order-score"><code class="language-json">{
+  "type": "record",
+  "name": "Score",
+  "namespace": "com.example",
+  "fields": [
+    {"name": "player", "type": "string"},
+    {"name": "points", "type": "int", "order": "descending"},
+    {"name": "note", "type": "string", "order": "ignore"}
+  ]
+}</code></pre>
+<pre data-example="guide/sort-order-typed" data-generate="guide/sort-order-score"><code class="language-dart">import 'package:avro/avro.dart';
+
+import 'types.g.dart';
+
+void main() {
+  final codec = TypedCodec(Score.avroType);
+  final scores = [
+    Score(player: 'bob', points: 7, note: 'late'),
+    Score(player: 'ada', points: 3, note: ''),
+    Score(player: 'ada', points: 9, note: 'best'),
+  ]..sort(codec.compare);
+  for (final s in scores) {
+    print(s);
+  }
+}</code></pre>
+<pre data-example-output="guide/sort-order-typed"><code>Score(player: ada, points: 9, note: best)
+Score(player: ada, points: 3, note: )
+Score(player: bob, points: 7, note: late)</code></pre>
+<p>
+  The <a href="../reference/sort-order-compatibility.html">Sort order and compatibility</a>
+  reference has the rules as a table to look up.
+</p>

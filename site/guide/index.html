@@ -1,4 +1,4 @@
-<!-- page: title="Guide" track="guide" order=0 summary="The Guide track: one task per page, from schemas and unions to JSON, container files, compressions, streams, limits, errors and code generation." -->
+<!-- page: title="Guide" track="guide" order=0 summary="The Guide track: one task per page, from schemas and unions to JSON, container files, compressions, streams, limits, errors, code generation, sort order, schema compatibility and Flutter web." -->
 <p class="lede">
   One task per page, each with programs you can run as they are. Read them in any order; each
   page links to the others where they meet.
@@ -87,6 +87,27 @@
       <p class="eyebrow">Chapter 12</p>
       <p class="card-title">Code generation</p>
       <p>Dart classes, enums and sealed unions from <code>.avsc</code> files, <code>TypedCodec</code>, and the generator as a library.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="sort-order.html">
+      <p class="eyebrow">Chapter 13</p>
+      <p class="card-title">Sort order</p>
+      <p><code>compare</code>, <code>compareBytes</code> without decoding, and <code>TypedCodec.compare</code>, by Avro's sort order.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="compatibility.html">
+      <p class="eyebrow">Chapter 14</p>
+      <p class="card-title">Schema compatibility</p>
+      <p><code>checkCompatibility</code>: every reason a reader schema cannot read a writer's data, before any data is read.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="flutter-web.html">
+      <p class="eyebrow">Chapter 15</p>
+      <p class="card-title">Flutter web</p>
+      <p>dart2wasm, what dart2js throws, and <code>deflate</code> without <code>dart:io</code>.</p>
     </a>
   </li>
 </ul>

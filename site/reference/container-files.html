@@ -14,7 +14,7 @@
   </thead>
   <tbody>
     <tr><td><code>null</code></td>       <td>yes</td> <td>yes</td>  <td>this package</td>                 <td>The default; also a file without <code>avro.codec</code></td></tr>
-    <tr><td><code>deflate</code></td>    <td>yes</td> <td>yes</td>  <td><code>dart:io</code></td>       <td>Raw DEFLATE</td></tr>
+    <tr><td><code>deflate</code></td>    <td>yes</td> <td>yes</td>  <td><code>dart:io</code>; <code>archive</code> on the web</td><td>Raw DEFLATE</td></tr>
     <tr><td><code>snappy</code></td>     <td>yes</td> <td>yes</td>  <td>this package</td>                 <td>Each block followed by the big-endian CRC32 of its uncompressed data, checked on reading; the declared length is checked before anything is allocated</td></tr>
     <tr><td><code>bzip2</code></td>      <td>yes</td> <td>yes</td>  <td><code>archive</code></td>        <td>Checksums verified on reading</td></tr>
     <tr><td><code>xz</code></td>         <td>yes</td> <td>yes</td>  <td><code>archive</code></td>        <td>Written stored: valid xz, but not compressed. Checksums verified on reading</td></tr>

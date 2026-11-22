@@ -1,6 +1,6 @@
 # avro
 
-A pure-Dart implementation of Apache Avro 1.12: schemas, binary, JSON and single-object encoding, schema resolution, fingerprints, object container files, and typed classes generated from schemas.
+A pure-Dart implementation of Apache Avro 1.12, for the Dart VM, AOT and the web through dart2wasm: schemas, binary, JSON and single-object encoding, schema resolution and compatibility, sort order, fingerprints, object container files, and typed classes generated from schemas.
 
 ## Language
 
@@ -17,6 +17,10 @@ _Avoid_: target schema, expected schema
 **Resolution**:
 The mapping from a writer schema to a reader schema, as the Avro specification defines it.
 _Avoid_: migration, evolution (for the mapping itself)
+
+**Compatibility**:
+Whether data of a writer schema can be read as a reader schema by resolution, as checked from the two schemas without data.
+_Avoid_: evolution (for the check)
 
 **Canonical form**:
 The Parsing Canonical Form of a schema, as the Avro specification defines it.
@@ -43,6 +47,10 @@ _Avoid_: record (unless the schema is a record), message
 **Branch**:
 The member of a union schema that a value belongs to.
 _Avoid_: union member, alternative, variant
+
+**Sort order**:
+The order the Avro specification defines on the values of a schema, by which values and their encodings are compared.
+_Avoid_: collation, sorting (for the order itself)
 
 ### Container files
 

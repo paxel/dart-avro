@@ -1,0 +1,109 @@
+<!-- page: title="Flutter web" track="guide" order=15 summary="The package on the web: dart2wasm only, built with flutter build web --wasm; what dart2js does (UnsupportedError: avro needs 64-bit integers: compile for the web with dart2wasm), which APIs throw there (codecs, readers and writers, the CRC-64 functions, Schema.crc64, SingleObjectHeader.parse) and which stay usable (Schema.parse, canonicalForm, md5, sha256); Flutter's JavaScript fallback; and deflate through archive's pure-Dart DEFLATE." -->
+<p class="lede">
+  The package runs in the browser when the app is compiled to WebAssembly with dart2wasm. It does
+  not run when it is compiled to JavaScript with dart2js, and says so at the first call instead
+  of giving wrong results.
+</p>
+
+<h2>Build with WebAssembly</h2>
+<p>
+  Avro's <code>long</code> is 64 bits, and the package holds it in a Dart <code>int</code>. With
+  dart2wasm an <code>int</code> is 64-bit, as on the VM and AOT, so the package behaves there as
+  on the VM: the codecs, JSON, single-object encoding, container files in every compression,
+  fingerprints, <a href="sort-order.html">sort order</a> and
+  <a href="compatibility.html">compatibility</a>. Build a Flutter web app with:
+</p>
+<pre data-fragment><code class="language-sh">flutter build web --wasm</code></pre>
+<p>
+  The tests that need no <code>dart:io</code> run in CI in Chrome under dart2wasm, with
+  <code>dart test -p chrome --compiler dart2wasm -t web</code>.
+</p>
+
+<div class="callout">
+  <p class="eyebrow">The JavaScript fallback</p>
+  <p>
+    Even with <code>--wasm</code>, Flutter also compiles the app to JavaScript, and loads that
+    build in a browser without WebAssembly GC, or one that its <code>wasmAllowList</code> does not
+    enable. There the package throws as under dart2js. See
+    <a href="https://docs.flutter.dev/platform-integration/web/wasm">Support for WebAssembly</a>
+    in the Flutter documentation for which browsers get which build.
+  </p>
+</div>
+
+<h2>What dart2js does</h2>
+<p>
+  With dart2js an <code>int</code> is a JavaScript number: exact only up to 2<sup>53</sup>, with
+  32-bit bit operations. Avro's <code>long</code>, its zig-zag varints and CRC-64-AVRO would go
+  silently wrong. So, under dart2js, these throw an <code>UnsupportedError</code> at once, before
+  doing any work; printed, it reads:
+</p>
+<pre data-fragment><code>Unsupported operation: avro needs 64-bit integers: compile for the web with dart2wasm</code></pre>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Under dart2js</th>   <th>APIs</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Throw <code>UnsupportedError</code></td><td>Creating an <code>AvroCodec</code> or a <code>TypedCodec</code>; creating an <code>AvroFileReader</code>, an <code>AvroFileWriter</code> or an <code>AvroFileStreamWriter</code>, and <code>AvroFileStreamReader.open</code>; <code>crc64Avro</code>, <code>crc64ToBytes</code>, <code>crc64FromBytes</code> and <code>Schema.crc64</code>; and so <code>SingleObjectHeader.parse</code>, once the bytes have the marker and the length of a header</td></tr>
+    <tr><td>Stay usable</td>     <td><code>Schema.parse</code> and the schema tree, <code>canonicalForm</code>, <code>md5</code> and <code>sha256</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  Without a codec nothing is encoded or decoded, so an app built with dart2js can parse and
+  fingerprint schemas, but not read or write data. These run the same everywhere:
+</p>
+<pre data-example="guide/flutter-web-schemas"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  // Usable under dart2js too: parsing, the canonical form, MD5 and SHA-256.
+  final schema = Schema.parse('''
+  {"type": "record", "name": "Memo", "namespace": "com.example",
+   "fields": [{"name": "text", "type": "string"}]}
+  ''');
+  print(schema.canonicalForm);
+  String hex(List&lt;int&gt; bytes) =&gt;
+      bytes.map((b) =&gt; b.toRadixString(16).padLeft(2, '0')).join();
+  print(hex(schema.md5));
+  print(hex(schema.sha256));
+}</code></pre>
+<pre data-example-output="guide/flutter-web-schemas"><code>{"name":"com.example.Memo","type":"record","fields":[{"name":"text","type":"string"}]}
+d88ab8410c6990cbf38b6551b19605b0
+f820777b80d7c2572d411523056b60afb30a0b6f7be1cb4b24a43a7a92599fc4</code></pre>
+
+<h2>DEFLATE on the web</h2>
+<p>
+  The VM and AOT compress and decompress <code>deflate</code> container files with the zlib of
+  <code>dart:io</code>. The web has no <code>dart:io</code>, so there the package uses the
+  pure-Dart DEFLATE of <code>archive</code>, which it already depends on for <code>bzip2</code>,
+  <code>xz</code> and <code>zstandard</code>. A conditional import chooses between the two; your
+  code does not change, and the files are read and written with the same checks and the same
+  <a href="limits.html">limits</a>. The other compressions are pure Dart on every platform.
+</p>
+<pre data-example="guide/flutter-web-deflate"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  // The same code on the VM, AOT and dart2wasm: deflate through dart:io's zlib on the
+  // VM and AOT, through archive's pure-Dart DEFLATE on the web.
+  final codec = AvroCodec(writer: Schema.parse('''
+  {"type": "record", "name": "Line", "fields": [{"name": "text", "type": "string"}]}
+  '''));
+  final writer = AvroFileWriter(codec, compression: 'deflate');
+  for (var i = 0; i &lt; 3; i++) {
+    writer.add({'text': 'line $i'});
+  }
+  final file = writer.close();
+
+  final reader = AvroFileReader(file);
+  print(reader.header.compression);
+  reader.records().forEach(print);
+}</code></pre>
+<pre data-example-output="guide/flutter-web-deflate"><code>deflate
+{text: line 0}
+{text: line 1}
+{text: line 2}</code></pre>
+<p>
+  In a browser there are no files to open: read the bytes of a container file from an HTTP
+  response or a file picker as a <code>Uint8List</code>, and give them to
+  <code>AvroFileReader</code>, or a byte stream to <code>AvroFileStreamReader.open</code>.
+</p>
