@@ -438,3 +438,17 @@ Schema _strip(Schema s) {
     ..remove('logicalType');
   return Schema.parse(jsonEncode(json));
 }
+
+/// Whether a writer's named type matches a reader's by name or alias, as [resolve] decides.
+bool namesMatch(NamedSchema w, NamedSchema r) => _namesMatch(w, r);
+
+/// Whether [resolve] promotes the primitive type [from] to [to].
+bool promotes(String from, String to) =>
+    _promotions[from]?.contains(to) ?? false;
+
+/// The reader branch [resolve] chooses for a writer's schema, or -1, with one resolver
+/// whose records are remembered across calls.
+int Function(Schema w, UnionSchema r) readerBranchChooser() {
+  final resolver = _Resolver(false);
+  return (w, r) => resolver.readerBranch(w, r, branchName(r));
+}
