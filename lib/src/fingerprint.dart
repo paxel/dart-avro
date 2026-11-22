@@ -3,10 +3,11 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
 
+import 'platform.dart';
 import 'schema.dart';
 
 // Built from two 32-bit halves: dart2js rejects a literal JavaScript cannot hold exactly,
-// and the package refuses to run there anyway (checkPlatform).
+// and every function using it refuses to run there (checkPlatform).
 final _empty = (0xc15d213a << 32) | 0xa4d7a795;
 
 final List<int> _table = List.generate(256, (i) {
@@ -19,6 +20,7 @@ final List<int> _table = List.generate(256, (i) {
 
 /// The CRC-64-AVRO (Rabin) fingerprint of [bytes], as the 64-bit pattern in an `int`.
 int crc64Avro(List<int> bytes) {
+  checkPlatform();
   var fp = _empty;
   for (final b in bytes) {
     fp = (fp >>> 8) ^ _table[(fp ^ b) & 0xff];
@@ -27,11 +29,15 @@ int crc64Avro(List<int> bytes) {
 }
 
 /// The 8 little-endian bytes of a CRC-64-AVRO fingerprint, as Avro writes it.
-Uint8List crc64ToBytes(int fingerprint) =>
-    Uint8List(8)..buffer.asByteData().setInt64(0, fingerprint, Endian.little);
+Uint8List crc64ToBytes(int fingerprint) {
+  checkPlatform();
+  return Uint8List(8)
+    ..buffer.asByteData().setInt64(0, fingerprint, Endian.little);
+}
 
 /// The CRC-64-AVRO fingerprint held in 8 little-endian bytes.
 int crc64FromBytes(List<int> bytes) {
+  checkPlatform();
   if (bytes.length != 8) {
     throw ArgumentError.value(bytes, 'bytes', 'must be 8 bytes');
   }
