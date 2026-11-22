@@ -130,6 +130,14 @@ final class BinaryReader {
 
   Uint8List readBytes() => readFixed(readLength());
 
+  /// The next [size] bytes as a view of the input, without copying them.
+  Uint8List readView(int size) {
+    _need(size);
+    final v = Uint8List.sublistView(_bytes, _offset, _offset + size);
+    _offset += size;
+    return v;
+  }
+
   String readString() {
     final start = _offset;
     final n = readLength();

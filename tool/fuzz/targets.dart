@@ -1,7 +1,7 @@
 // The fuzz targets: the entry points that take untrusted input, AvroCodec.decode (with
-// single-object encoding), AvroCodec.decodeJson, AvroFileReader with its records and
-// AvroFileStreamReader with its records. Any input must either decode or throw an
-// AvroException.
+// single-object encoding), AvroCodec.decodeJson, AvroCodec.compareBytes (on schemas whose
+// order reaches no map), AvroFileReader with its records and AvroFileStreamReader with its
+// records. Any input must either decode or throw an AvroException.
 
 import 'dart:async';
 import 'dart:convert';
@@ -37,6 +37,14 @@ List<AvroCodec> fuzzCodecs() => [
         '{"name": "u", "type": {"type": "string", "logicalType": "uuid"}}, '
         '{"name": "f", "type": {"type": "fixed", "name": "U", "size": 16, "logicalType": "uuid"}}, '
         '{"name": "r", "type": {"type": "fixed", "name": "R", "size": 12, "logicalType": "duration"}}]}',
+    '{"type": "record", "name": "O", "fields": ['
+        '{"name": "m", "type": {"type": "map", "values": "string"}, "order": "ignore"}, '
+        '{"name": "e", "type": {"type": "enum", "name": "E", "symbols": ["a", "b"]}, '
+        '"order": "descending"}, '
+        '{"name": "f", "type": {"type": "fixed", "name": "F", "size": 2}, "order": "descending"}, '
+        '{"name": "a", "type": {"type": "array", "items": ["null", "string", "F"]}}, '
+        '{"name": "d", "type": "double"}, '
+        '{"name": "next", "type": ["null", "O"]}]}',
   ])
     AvroCodec(writer: Schema.parse(text), limits: fuzzLimits),
 ];
@@ -70,11 +78,18 @@ FuzzFailure? fuzzOne(Uint8List input, List<AvroCodec> codecs) {
   }
 
   final text = utf8.decode(input, allowMalformed: true);
+  final half = Uint8List.sublistView(input, input.length ~/ 2);
   for (final codec in codecs) {
     final failure =
         run('decode ${codec.writer.type}', () => codec.decode(input)) ??
         run('decodeSingleObject', () => codec.decodeSingleObject(input)) ??
-        run('decodeJson ${codec.writer.type}', () => codec.decodeJson(text));
+        run('decodeJson ${codec.writer.type}', () => codec.decodeJson(text)) ??
+        (_ordered(codec.writer, {})
+            ? run('compareBytes ${codec.writer.type}', () {
+                codec.compareBytes(input, input);
+                codec.compareBytes(input, half);
+              })
+            : null);
     if (failure != null) return failure;
   }
   return run(
@@ -89,6 +104,21 @@ FuzzFailure? fuzzOne(Uint8List input, List<AvroCodec> codecs) {
         final text = String.fromCharCodes(input);
         Schema.parse(text, limits: fuzzLimits);
       });
+}
+
+/// Whether the sort order of [schema] reaches no map, which `compareBytes` refuses with an
+/// [ArgumentError] whatever the input; a map in an ignored field is skipped.
+bool _ordered(Schema schema, Set<Schema> seen) {
+  if (!seen.add(schema)) return true;
+  return switch (schema) {
+    MapSchema() => false,
+    ArraySchema(:final items) => _ordered(items, seen),
+    UnionSchema(:final branches) => branches.every((b) => _ordered(b, seen)),
+    RecordSchema(:final fields) => fields.every(
+      (f) => f.order == 'ignore' || _ordered(f.schema, seen),
+    ),
+    _ => true,
+  };
 }
 
 /// Runs [AvroFileStreamReader] on [input], in chunks whose sizes come from [input] itself,
@@ -178,6 +208,21 @@ List<Uint8List> fuzzSeeds(List<AvroCodec> codecs) {
           .close(),
     ],
     logical.encode(logicalValue),
+    codecs[6].encode({
+      'm': {'k': 'v'},
+      'e': 'b',
+      'a': [null, 'x', Uint8List(2)],
+      'f': Uint8List(2),
+      'd': 1.5,
+      'next': {
+        'm': <String, Object?>{},
+        'e': 'a',
+        'a': <Object?>[],
+        'f': Uint8List(2),
+        'd': -0.0,
+        'next': null,
+      },
+    }),
     logical.encodeSingleObject(logicalValue),
     codecs[3].encode([
       {'a': null, 'b': 'x', 'c': Uint8List(3)},
