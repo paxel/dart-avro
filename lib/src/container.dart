@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io' show ZLibDecoder, ZLibEncoder;
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -18,6 +17,7 @@ import 'package:archive/archive.dart'
 
 import 'binary.dart';
 import 'codec.dart';
+import 'deflate_archive.dart' if (dart.library.io) 'deflate_io.dart';
 import 'exceptions.dart';
 import 'fingerprint.dart';
 import 'limits.dart';
@@ -448,60 +448,32 @@ Uint8List _unsnappy(AvroLimits limits, Uint8List data, int total, int offset) {
 
 /// Raw DEFLATE, stopped as soon as the output exceeds a limit.
 Uint8List _inflate(AvroLimits limits, Uint8List data, int total, int offset) {
-  final out = _LimitedSink(limits, total);
-  final sink = ZLibDecoder(raw: true).startChunkedConversion(out);
   try {
-    const chunk = 4096;
-    for (var i = 0; i < data.length; i += chunk) {
-      sink.add(
-        Uint8List.sublistView(
-          data,
-          i,
-          i + chunk < data.length ? i + chunk : data.length,
-        ),
-      );
-    }
-    sink.close();
+    return inflateRaw(data, (length) {
+      final maxBlock = limits.maxBlockBytes;
+      if (maxBlock != null && length > maxBlock) {
+        throw LimitExceededException(
+          'a block inflates beyond $maxBlock bytes',
+          limit: 'maxBlockBytes',
+        );
+      }
+      final maxTotal = limits.maxTotalBytes;
+      if (maxTotal != null && total + length > maxTotal) {
+        throw LimitExceededException(
+          'the blocks inflate beyond $maxTotal bytes',
+          limit: 'maxTotalBytes',
+        );
+      }
+    });
   } on LimitExceededException {
     rethrow;
   } on Exception catch (e) {
     throw DecodeException('the block is not valid DEFLATE: $e', offset: offset);
   }
-  return out.bytes.takeBytes();
 }
 
 String _hex(int fingerprint) =>
     '0x${BigInt.from(fingerprint).toUnsigned(64).toRadixString(16).padLeft(16, '0')}';
-
-final class _LimitedSink implements Sink<List<int>> {
-  _LimitedSink(this.limits, this.total);
-
-  final AvroLimits limits;
-  final int total;
-  final BytesBuilder bytes = BytesBuilder(copy: true);
-
-  @override
-  void add(List<int> chunk) {
-    bytes.add(chunk);
-    final maxBlock = limits.maxBlockBytes;
-    if (maxBlock != null && bytes.length > maxBlock) {
-      throw LimitExceededException(
-        'a block inflates beyond $maxBlock bytes',
-        limit: 'maxBlockBytes',
-      );
-    }
-    final maxTotal = limits.maxTotalBytes;
-    if (maxTotal != null && total + bytes.length > maxTotal) {
-      throw LimitExceededException(
-        'the blocks inflate beyond $maxTotal bytes',
-        limit: 'maxTotalBytes',
-      );
-    }
-  }
-
-  @override
-  void close() {}
-}
 
 /// Writes an object container file in memory.
 ///
@@ -660,7 +632,7 @@ final class BlockEncoder {
     if (_count == 0) return null;
     final raw = _block.toBytes();
     final data = switch (compression) {
-      'deflate' => ZLibEncoder(raw: true).convert(raw),
+      'deflate' => deflateRaw(raw),
       'snappy' => _snappy(raw),
       'bzip2' => BZip2Encoder().encodeBytes(raw),
       'xz' => XZEncoder().encodeBytes(raw),
