@@ -20,6 +20,7 @@ code-scanning-ignores.toml
 coverage-floors.toml
 docs/
 eslint.config.js
+gates.toml
 osv-scanner.toml
 package-lock.json
 package.json
