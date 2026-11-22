@@ -6,6 +6,7 @@ import 'fingerprint.dart';
 import 'json.dart';
 import 'limits.dart';
 import 'logical.dart';
+import 'platform.dart';
 import 'resolve.dart';
 import 'schema.dart';
 
@@ -46,9 +47,16 @@ final class AvroCodec {
     this.limits = const AvroLimits(),
     this.decodeBranches = false,
   }) : reader = reader ?? writer,
-       _plan = reader == null || identical(reader, writer)
-           ? null
-           : resolve(writer, reader, branches: decodeBranches);
+       _plan = _planFor(writer, reader, decodeBranches);
+
+  /// The resolution plan of [writer] read as [reader], checking the platform first, so that
+  /// dart2js fails before any work is done.
+  static Plan? _planFor(Schema writer, Schema? reader, bool branches) {
+    checkPlatform();
+    return reader == null || identical(reader, writer)
+        ? null
+        : resolve(writer, reader, branches: branches);
+  }
 
   /// The schema data is encoded with.
   final Schema writer;

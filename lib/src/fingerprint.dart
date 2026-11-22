@@ -5,7 +5,9 @@ import 'package:crypto/crypto.dart' as crypto;
 
 import 'schema.dart';
 
-const _empty = 0xc15d213aa4d7a795;
+// Built from two 32-bit halves: dart2js rejects a literal JavaScript cannot hold exactly,
+// and the package refuses to run there anyway (checkPlatform).
+final _empty = (0xc15d213a << 32) | 0xa4d7a795;
 
 final List<int> _table = List.generate(256, (i) {
   var fp = i;

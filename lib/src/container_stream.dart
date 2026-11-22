@@ -7,6 +7,7 @@ import 'codec.dart';
 import 'container.dart';
 import 'exceptions.dart';
 import 'limits.dart';
+import 'platform.dart';
 
 /// Reads an object container file from a stream of bytes, one block at a time.
 ///
@@ -29,6 +30,7 @@ final class AvroFileStreamReader {
     Stream<List<int>> input, {
     AvroLimits limits = const AvroLimits(),
   }) async {
+    checkPlatform();
     final bytes = _Input(StreamIterator(input));
     try {
       final parser = HeaderParser();
@@ -254,6 +256,7 @@ final class AvroFileStreamWriter {
     this.blockSize = 64 * 1024,
   }) : _sink = sink,
        syncMarker = syncMarker ?? randomSyncMarker() {
+    checkPlatform();
     final header = encodeHeader(
       codec,
       compression,

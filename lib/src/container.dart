@@ -21,6 +21,7 @@ import 'deflate_archive.dart' if (dart.library.io) 'deflate_io.dart';
 import 'exceptions.dart';
 import 'fingerprint.dart';
 import 'limits.dart';
+import 'platform.dart';
 import 'schema.dart';
 import 'snappy.dart';
 
@@ -74,6 +75,7 @@ final class AvroFileHeader {
 final class AvroFileReader {
   AvroFileReader(Uint8List bytes, {this.limits = const AvroLimits()})
     : _bytes = bytes {
+    checkPlatform();
     final (header, blocksStart) = HeaderParser().parse(bytes);
     this.header = header;
     _blocksStart = blocksStart;
@@ -497,6 +499,7 @@ final class AvroFileWriter {
     String? schemaJson,
     this.blockSize = 64 * 1024,
   }) : syncMarker = syncMarker ?? randomSyncMarker() {
+    checkPlatform();
     _out.writeFixed(
       encodeHeader(codec, compression, metadata, this.syncMarker, schemaJson),
     );
