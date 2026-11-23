@@ -86,4 +86,8 @@ final class TypedCodec<T> {
   /// Decodes a datum in single-object encoding, whose fingerprint must be the writer schema's.
   T decodeSingleObject(Uint8List bytes) =>
       type.fromAvro(avro.decodeSingleObject(bytes));
+
+  /// Compares [a] and [b] by the Avro sort order of the type's schema, as
+  /// [AvroCodec.compare] compares their generic values; returns -1, 0 or 1.
+  int compare(T a, T b) => _encoder.compare(type.toAvro(a), type.toAvro(b));
 }

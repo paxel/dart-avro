@@ -1,0 +1,188 @@
+<!-- page: title="Schema compatibility" track="guide" order=14 summary="Check without data whether data of a writer schema can be read as a reader schema with checkCompatibility: SchemaCompatibility and its incompatibilities, the seven IncompatibilityKinds, the paths in the reader and in the writer schema, and the cases that fail only for some data, where a codec can still be made." -->
+<p class="lede">
+  Before a new schema goes live, you want to know whether it can read what the old one wrote.
+  <code>checkCompatibility</code> answers that from the two schemas alone, with every reason it
+  finds, not only the first.
+</p>
+
+<h2>Checking two schemas</h2>
+<p>
+  <code>checkCompatibility(reader:, writer:)</code> checks whether data of the
+  <a href="../start/glossary.html#writer-schema">writer schema</a> can be read as the
+  <a href="../start/glossary.html#reader-schema">reader schema</a> by the
+  <a href="resolution.html">schema resolution</a> of <code>AvroCodec</code>. It returns a
+  <code>SchemaCompatibility</code>:
+</p>
+<ul>
+  <li><code>isCompatible</code>: whether every datum of the writer schema can be read as the reader schema.</li>
+  <li><code>incompatibilities</code>: every <code>Incompatibility</code> found, in the order of the schemas; empty if compatible.</li>
+</ul>
+<p>
+  Each <code>Incompatibility</code> has its <code>kind</code>, a <code>message</code> in words,
+  and two paths, <code>readerPath</code> and <code>writerPath</code>.
+</p>
+<pre data-example="guide/compatibility-check"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final writer = Schema.parse('''
+  {"type": "record", "name": "Memo", "fields": [
+    {"name": "text", "type": "string"},
+    {"name": "stars", "type": "int"},
+    {"name": "colour", "type": {"type": "enum", "name": "Colour", "symbols": ["RED", "GREEN", "BLUE"]}},
+    {"name": "tags", "type": {"type": "array", "items": "string"}}
+  ]}
+  ''');
+  final reader = Schema.parse('''
+  {"type": "record", "name": "Memo", "fields": [
+    {"name": "text", "type": "string"},
+    {"name": "stars", "type": "double"},
+    {"name": "colour", "type": {"type": "enum", "name": "Colour", "symbols": ["RED", "GREEN"]}},
+    {"name": "tags", "type": {"type": "array", "items": "long"}},
+    {"name": "author", "type": "string"}
+  ]}
+  ''');
+
+  final result = checkCompatibility(reader: reader, writer: writer);
+  print(result.isCompatible);
+  for (final i in result.incompatibilities) {
+    print('${i.kind.name}: ${i.readerPath} / ${i.writerPath}');
+    print('  ${i.message}');
+  }
+
+  // The other way round: double does not resolve to int, nor long to string.
+  print(checkCompatibility(reader: writer, writer: reader).incompatibilities.length);
+}</code></pre>
+<pre data-example-output="guide/compatibility-check"><code>false
+missingEnumSymbols: Memo.colour / Memo.colour
+  the reader enum lacks the writer symbols BLUE and has no default
+typeMismatch: Memo.tags[] / Memo.tags[]
+  string does not resolve to long
+readerFieldMissingDefaultValue: Memo.author / Memo
+  the reader field "author" has no default and the writer lacks it
+2</code></pre>
+<p>
+  The <code>int</code> read as <code>double</code> is a promotion and no incompatibility.
+</p>
+
+<h2>The kinds</h2>
+<p>
+  <code>IncompatibilityKind</code> is named after <code>SchemaIncompatibilityType</code> of Apache
+  Avro for Java, where one matches:
+</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Kind</th>                                        <th>When</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>nameMismatch</code></td>                     <td>A named type of the writer has neither the reader's name nor one of its aliases</td></tr>
+    <tr><td><code>fixedSizeMismatch</code></td>                <td>The writer's <code>fixed</code> has another size than the reader's</td></tr>
+    <tr><td><code>missingEnumSymbols</code></td>               <td>The writer's enum has symbols the reader's lacks, and the reader's has no default</td></tr>
+    <tr><td><code>readerFieldMissingDefaultValue</code></td>   <td>A field of the reader's record that the writer's lacks has no default</td></tr>
+    <tr><td><code>typeMismatch</code></td>                     <td>The writer's type neither is the reader's nor promotes to it</td></tr>
+    <tr><td><code>missingUnionBranch</code></td>               <td>No branch of the reader's union takes the writer's type, or the writer's union has no branch at all</td></tr>
+    <tr><td><code>decimalMismatch</code></td>                  <td>The writer's and the reader's <code>decimal</code> differ in precision or scale; Java has no such kind</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>The two paths</h2>
+<p>
+  <code>readerPath</code> says where the incompatibility is in the reader schema, and
+  <code>writerPath</code> where it is in the writer schema. Both are written as the paths of
+  <code>ResolutionException</code>: the name of the schema, then <code>.field</code> for a field,
+  <code>[]</code> for the items of an array, <code>{}</code> for the values of a map and
+  <code>&lt;branch&gt;</code> for a branch of a union. Each names only the fields and branches of
+  its own schema, so they differ where the schemas do: a record renamed with an alias, a field
+  matched by an alias, a field only one side has, a branch of the writer's union.
+</p>
+<pre data-example="guide/compatibility-paths"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final writer = Schema.parse('''
+  {"type": "record", "name": "com.example.Memo", "fields": [
+    {"name": "text", "type": "string"},
+    {"name": "id", "type": {"type": "fixed", "name": "Id", "size": 16}}
+  ]}
+  ''');
+  final reader = Schema.parse('''
+  {"type": "record", "name": "com.example.Note", "aliases": ["com.example.Memo"], "fields": [
+    {"name": "body", "type": "int", "aliases": ["text"]},
+    {"name": "id", "type": {"type": "fixed", "name": "Id", "size": 8}}
+  ]}
+  ''');
+
+  for (final i in checkCompatibility(reader: reader, writer: writer).incompatibilities) {
+    print(i);
+  }
+
+  // A codec for the two stops at the first problem.
+  try {
+    AvroCodec(writer: writer, reader: reader);
+  } on ResolutionException catch (e) {
+    print(e);
+  }
+}</code></pre>
+<pre data-example-output="guide/compatibility-paths"><code>Incompatibility(typeMismatch at com.example.Note.body, writer com.example.Memo.text: string does not resolve to int)
+Incompatibility(fixedSizeMismatch at com.example.Note.id, writer com.example.Memo.id: the writer fixed has 16 bytes, the reader fixed 8)
+ResolutionException at com.example.Note.body: string does not resolve to int</code></pre>
+
+<h2>What fails only for some data</h2>
+<p>
+  The check agrees with <code>AvroCodec(writer:, reader:)</code>: where the constructor throws
+  <code>ResolutionException</code>, the result is incompatible. It also reports two cases for
+  which the codec can still be made, because only some data fails, and that data then throws
+  <code>ResolutionException</code> from <code>decode</code>:
+</p>
+<ul>
+  <li><code>missingEnumSymbols</code>: a datum holding a writer symbol the reader lacks, when the reader's enum has no default. Every other symbol reads.</li>
+  <li>Any incompatibility inside a branch of the writer's union, recognisable by the <code>&lt;branch&gt;</code> in its <code>writerPath</code>, such as <code>Event.payload&lt;int&gt;</code>: a datum in that branch. The other branches read. Only when no branch of the writer's union resolves does the codec throw at once.</li>
+</ul>
+<pre data-example="guide/compatibility-data"><code class="language-dart">import 'package:avro/avro.dart';
+
+void main() {
+  final writer = Schema.parse('''
+  {"type": "record", "name": "Event", "fields": [
+    {"name": "colour", "type": {"type": "enum", "name": "Colour", "symbols": ["RED", "BLUE"]}},
+    {"name": "payload", "type": ["null", "string", "int"]}
+  ]}
+  ''');
+  final reader = Schema.parse('''
+  {"type": "record", "name": "Event", "fields": [
+    {"name": "colour", "type": {"type": "enum", "name": "Colour", "symbols": ["RED"]}},
+    {"name": "payload", "type": ["null", "string"]}
+  ]}
+  ''');
+
+  for (final i in checkCompatibility(reader: reader, writer: writer).incompatibilities) {
+    print('${i.kind.name} at ${i.readerPath}, writer ${i.writerPath}');
+  }
+
+  // The codec can still be made: only some data fails.
+  final codec = AvroCodec(writer: writer, reader: reader);
+  final writing = AvroCodec(writer: writer);
+  print(codec.decode(writing.encode({'colour': 'RED', 'payload': 'hi'})));
+  for (final value in [
+    {'colour': 'BLUE', 'payload': null},
+    {'colour': 'RED', 'payload': 7},
+  ]) {
+    try {
+      codec.decode(writing.encode(value));
+    } on ResolutionException catch (e) {
+      print(e);
+    }
+  }
+}</code></pre>
+<pre data-example-output="guide/compatibility-data"><code>missingEnumSymbols at Event.colour, writer Event.colour
+missingUnionBranch at Event.payload, writer Event.payload&lt;int&gt;
+{colour: RED, payload: hi}
+ResolutionException at $.colour: the writer symbol "BLUE" is not in Colour, which has no default
+ResolutionException at $.payload: the writer wrote a branch that does not resolve: ResolutionException at Event.payload&lt;int&gt;: no branch of the reader union null, string matches int</code></pre>
+<p>
+  So use <code>checkCompatibility</code> to decide whether a schema may replace another, and the
+  codec to read the data: an incompatible result does not mean that no datum can be read, and
+  data written by a compatible writer schema still throws <code>DecodeException</code> if its
+  bytes are not a valid encoding. The
+  <a href="../reference/sort-order-compatibility.html">Sort order and compatibility</a>
+  reference has the API as tables.
+</p>

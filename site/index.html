@@ -1,9 +1,9 @@
-<!-- page: title="avro" summary="A pure-Dart implementation of Apache Avro 1.12: schemas, binary, single-object and JSON encoding, schema resolution, fingerprints, object container files in every compression, and code generation." -->
+<!-- page: title="avro" summary="A pure-Dart implementation of Apache Avro 1.12 for the Dart VM, AOT and the web through dart2wasm: schemas, binary, single-object and JSON encoding, schema resolution and compatibility, sort order, fingerprints, object container files in every compression, and code generation." -->
 <p class="lede">
   <code>avro</code> is a pure-Dart implementation of
   <a href="https://avro.apache.org/docs/1.12.0/specification/">Apache Avro 1.12</a>: schemas,
-  binary, single-object and JSON encoding, schema resolution, fingerprints and object container
-  files.
+  binary, single-object and JSON encoding, schema resolution, sort order, fingerprints and object
+  container files.
 </p>
 
 <h2>What it is</h2>
@@ -13,7 +13,8 @@
   <code>Map&lt;String, Object?&gt;</code>, arrays are <code>List&lt;Object?&gt;</code>; or, with
   <code>dart run avro:generate</code>, immutable Dart classes generated from your schemas. A second
   schema lets the codec read old data as a newer shape, by Avro's schema
-  resolution. The same values have a JSON encoding. Container files, the <code>.avro</code>
+  resolution, and <code>checkCompatibility</code> says beforehand whether it can. The codec also
+  compares values and their encodings by Avro's sort order. The same values have a JSON encoding. Container files, the <code>.avro</code>
   files other Avro libraries write, are read and written in memory or as streams, in every
   compression of the specification.
 </p>
@@ -22,38 +23,43 @@
   <code>package:avro/generate.dart</code>, the code generator for build steps. It has two
   direct dependencies: <code>crypto</code>, for the MD5 and SHA-256 fingerprints, and
   <code>archive</code>, for the compressions <code>bzip2</code>, <code>xz</code> and
-  <code>zstandard</code>.
+  <code>zstandard</code>, and for <code>deflate</code> on the web.
 </p>
 
 <div class="callout">
-  <p class="eyebrow">Native only</p>
+  <p class="eyebrow">Platforms</p>
   <p>
-    The package runs on the Dart VM and AOT: Android, iOS, Linux, macOS and Windows. Flutter web is
-    not supported. The package relies on 64-bit <code>int</code> values for Avro's
-    <code>long</code> and on <code>dart:io</code> for DEFLATE.
+    The package runs on the Dart VM and AOT: Android, iOS, Linux, macOS and Windows; and on the web
+    when compiled with dart2wasm, as <code>flutter build web --wasm</code> does. It relies on
+    64-bit <code>int</code> values for Avro's <code>long</code>, which dart2js does not have:
+    compiled with dart2js, its codecs throw <code>UnsupportedError</code>. See
+    <a href="guide/flutter-web.html">Flutter web</a>.
   </p>
 </div>
 
-<h2>What 0.3.0 covers</h2>
+<h2>What 0.4.0 covers</h2>
 <ul>
   <li>Every primitive, complex and logical type of Avro 1.12.</li>
   <li>Binary encoding, single-object encoding and JSON encoding.</li>
   <li>Schema parsing, and schema resolution between a writer and a reader schema.</li>
+  <li>A schema compatibility check, without data, with every incompatibility and its place in both schemas.</li>
+  <li>The sort order: comparing values, and encodings without decoding them.</li>
   <li>Parsing Canonical Form, with the fingerprints CRC-64-AVRO, MD5 and SHA-256.</li>
   <li>Object container files, read and write, in memory or as streams, compressed with <code>null</code>, <code>deflate</code>, <code>snappy</code>, <code>bzip2</code>, <code>xz</code> or <code>zstandard</code>.</li>
   <li>Limits on untrusted input, on by default.</li>
   <li>Code generation of immutable Dart classes, enums and sealed unions from <code>.avsc</code> files, with <code>TypedCodec</code>, as a command and as a library.</li>
 </ul>
 
-<h2>What 0.3.0 does not cover</h2>
+<h2>What 0.4.0 does not cover</h2>
 <ul>
   <li>The Avro IPC/RPC protocol.</li>
+  <li>The web compiled with dart2js.</li>
 </ul>
 
 <h2>Install</h2>
 <p>Add the package to the <code>dependencies</code> of your <code>pubspec.yaml</code>:</p>
 <pre data-fragment><code class="language-yaml">dependencies:
-  avro: ^0.3.0</code></pre>
+  avro: ^0.4.0</code></pre>
 <p>
   Then follow <a href="start/getting-started.html">Getting started</a>: a schema, a record, and a
   container file in five minutes.
@@ -73,14 +79,14 @@
     <a class="card" href="guide/index.html">
       <p class="eyebrow">Track</p>
       <p class="card-title">Guide</p>
-      <p>One task per page: schemas, unions, resolution, JSON, container files, compressions, streams, limits, errors, code generation.</p>
+      <p>One task per page: schemas, unions, resolution, JSON, container files, compressions, streams, limits, errors, code generation, sort order, compatibility, Flutter web.</p>
     </a>
   </li>
   <li>
     <a class="card" href="reference/index.html">
       <p class="eyebrow">Track</p>
       <p class="card-title">Reference</p>
-      <p>The value mapping, generated code, JSON, container files, the limits, the exceptions and the conformance with the specification.</p>
+      <p>The value mapping, generated code, JSON, container files, the limits, the exceptions, the conformance with the specification, sort order and compatibility, and the benchmarks.</p>
     </a>
   </li>
 </ul>

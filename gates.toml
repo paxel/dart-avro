@@ -1,0 +1,8 @@
+# Directories whose manifests are not a stack of this repository, read by the paxel/gates
+# audit. Each entry names the directory and why its manifest is not a part of the package.
+
+[[NotStacks]]
+path = "tool/bench/java"
+reason = """The Java side of the benchmark comparison (avro-1036): a Maven project run by hand \
+on a developer machine to measure Apache Avro next to this package. Nothing is built from it, \
+released or run in CI, and it is not in the pub.dev archive."""

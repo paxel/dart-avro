@@ -1,10 +1,10 @@
-<!-- page: title="Spec conformance" track="reference" order=6 summary="What of Avro 1.12 version 0.3.0 implements and what it does not, the test oracles (Apache test data, files written by Python avro, AXT examples, the Python avro interop job), what has no second implementation, the big-decimal layout, and fuzzing." -->
+<!-- page: title="Spec conformance" track="reference" order=6 summary="What of Avro 1.12 version 0.4.0 implements and what it does not, the platforms (the web through dart2wasm, not dart2js), the test oracles (Apache test data, files written by Python avro, AXT examples, the Python avro interop job, the web job), what has no second implementation, the big-decimal layout, and fuzzing." -->
 <p class="lede">
   What of the <a href="https://avro.apache.org/docs/1.12.0/specification/">Avro 1.12
-  specification</a> version 0.3.0 implements, and how that is checked.
+  specification</a> version 0.4.0 implements, and how that is checked.
 </p>
 
-<h2>In 0.3.0</h2>
+<h2>In 0.4.0</h2>
 <div class="table-wrap">
 <table>
   <thead>
@@ -19,24 +19,39 @@
     <tr><td>Schema resolution</td>                          <td>Complete</td></tr>
     <tr><td>Parsing Canonical Form</td>                     <td>Complete</td></tr>
     <tr><td>Fingerprints</td>                               <td>CRC-64-AVRO, MD5, SHA-256</td></tr>
+    <tr><td>Sort order</td>                                 <td>Complete: <code>compare</code> and <code>compareBytes</code> of <code>AvroCodec</code>, and <code>TypedCodec.compare</code>, with every field <code>order</code>; maps, which the specification gives no order, throw <code>ArgumentError</code></td></tr>
     <tr><td>Object container files</td>                     <td>Read and write, in memory and as streams, with every compression of the specification: <code>null</code>, <code>deflate</code>, <code>snappy</code>, <code>bzip2</code>, <code>xz</code> (written stored) and <code>zstandard</code></td></tr>
   </tbody>
 </table>
 </div>
 
-<h2>Not in 0.3.0</h2>
+<h2>Not in 0.4.0</h2>
 <div class="table-wrap">
 <table>
   <thead>
-    <tr><th>Part of the specification</th>                            <th>What happens instead</th></tr>
+    <tr><th>What</th>                                                 <th>What happens instead</th></tr>
   </thead>
   <tbody>
     <tr><td>The IPC/RPC protocol and protocol declarations</td>        <td>Not available; an <code>error</code> type is parsed and encoded as a record</td></tr>
-    <tr><td>Sort order</td>                                           <td>A field's <code>order</code> is parsed and kept, but nothing compares by it</td></tr>
+    <tr><td>The web, compiled with dart2js</td><td>The codecs, readers, writers and CRC-64 functions throw <code>UnsupportedError</code>; compile with dart2wasm</td></tr>
   </tbody>
 </table>
 </div>
-<p>These may follow as minor versions. The package runs on the Dart VM and AOT, not on Flutter web.</p>
+<p>The IPC/RPC protocol may follow as a minor version.</p>
+
+<h2>Platforms</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Platform</th>                                     <th>Status</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Dart VM and AOT: Android, iOS, Linux, macOS, Windows</td><td>Supported; <code>deflate</code> through the zlib of <code>dart:io</code></td></tr>
+    <tr><td>Web, compiled with dart2wasm</td>                  <td>Supported; <code>deflate</code> through the pure-Dart DEFLATE of <code>archive</code></td></tr>
+    <tr><td>Web, compiled with dart2js</td>                    <td>Not supported: an <code>int</code> is not 64-bit there, and the codecs, readers, writers and CRC-64 functions throw <code>UnsupportedError</code>; see <a href="../guide/flutter-web.html">Flutter web</a></td></tr>
+  </tbody>
+</table>
+</div>
 <p>
   An <code>xz</code> block is written as stored LZMA2 data, without compression, because the
   package <code>archive</code> writes <code>xz</code> only that way; the file is valid xz, and
@@ -69,6 +84,7 @@
     <tr><td>Compression bombs</td>                                         <td>200 MiB and 20 MiB of zeros compressed by Python and XZ Utils with <code>bzip2</code>, <code>xz</code> and <code>zstandard</code>, which must stop at the limits</td></tr>
     <tr><td>Apache <code>syncInMeta.avro</code></td>                      <td>A file whose metadata contains its own sync marker</td></tr>
     <tr><td>AXT examples</td>                                             <td>Canonical forms, a single-object message of 210 bytes and a container file of 5,020 bytes, written by fastavro 1.13.1</td></tr>
+    <tr><td>The web job</td>                                              <td>A CI job runs every test tagged <code>web</code>, those that need no <code>dart:io</code>, compiled with dart2wasm in Chrome: <code>dart test -p chrome --compiler dart2wasm -t web</code></td></tr>
     <tr><td>Hand-written cases</td>                                       <td>Byte-exact encodings worked out from the specification, for every type and logical type</td></tr>
   </tbody>
 </table>
@@ -116,10 +132,11 @@
   <li><code>local-timestamp-millis</code>, <code>-micros</code> and <code>-nanos</code>;</li>
   <li><code>big-decimal</code>;</li>
   <li><code>duration</code>;</li>
-  <li><code>uuid</code> on <code>fixed</code>.</li>
+  <li><code>uuid</code> on <code>fixed</code>;</li>
+  <li>the sort order, whose tests are worked out from the specification and from Java's <code>Double.compare</code> for <code>NaN</code> and <code>-0.0</code>, not compared with another implementation.</li>
 </ul>
 <p>
-  Each but the JSON encoding is a thin layer over an encoding the interop job does check:
+  Each but the JSON encoding and the sort order is a thin layer over an encoding the interop job does check:
   <code>long</code>, <code>bytes</code> or <code>fixed</code>.
 </p>
 

@@ -7,11 +7,12 @@
 
 <h2>Add the dependency</h2>
 <p>
-  The package needs Dart 3.13 or later and runs on the Dart VM and AOT, not on Flutter web. Add it
-  to the <code>dependencies</code> of your <code>pubspec.yaml</code>:
+  The package needs Dart 3.13 or later and runs on the Dart VM and AOT, and on the web when
+  compiled with dart2wasm (see <a href="../guide/flutter-web.html">Flutter web</a>). Add it to the
+  <code>dependencies</code> of your <code>pubspec.yaml</code>:
 </p>
 <pre data-fragment><code class="language-yaml">dependencies:
-  avro: ^0.3.0</code></pre>
+  avro: ^0.4.0</code></pre>
 <p>Run <code>dart pub get</code>, or <code>flutter pub get</code> in a Flutter app, and import the one library:</p>
 <pre data-fragment><code class="language-dart">import 'package:avro/avro.dart';</code></pre>
 

@@ -1,0 +1,246 @@
+{
+  "type": "record",
+  "name": "Wide",
+  "namespace": "bench",
+  "fields": [
+    {
+      "name": "f49",
+      "type": {
+        "type": "enum",
+        "name": "Color",
+        "symbols": [
+          "RED",
+          "GREEN",
+          "BLUE",
+          "BLACK"
+        ]
+      }
+    },
+    {
+      "name": "f48",
+      "type": [
+        "null",
+        "long"
+      ]
+    },
+    {
+      "name": "f47",
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    {
+      "name": "f46",
+      "type": "bytes"
+    },
+    {
+      "name": "f45",
+      "type": "double"
+    },
+    {
+      "name": "f44",
+      "type": "boolean"
+    },
+    {
+      "name": "f43",
+      "type": "double"
+    },
+    {
+      "name": "f42",
+      "type": "string"
+    },
+    {
+      "name": "f41",
+      "type": "long"
+    },
+    {
+      "name": "f40",
+      "type": "long"
+    },
+    {
+      "name": "f39",
+      "type": "Color"
+    },
+    {
+      "name": "f38",
+      "type": [
+        "null",
+        "long"
+      ]
+    },
+    {
+      "name": "f37",
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    {
+      "name": "f36",
+      "type": "bytes"
+    },
+    {
+      "name": "f35",
+      "type": "double"
+    },
+    {
+      "name": "f34",
+      "type": "boolean"
+    },
+    {
+      "name": "f33",
+      "type": "double"
+    },
+    {
+      "name": "f32",
+      "type": "string"
+    },
+    {
+      "name": "f31",
+      "type": "long"
+    },
+    {
+      "name": "f30",
+      "type": "long"
+    },
+    {
+      "name": "f29",
+      "type": "Color"
+    },
+    {
+      "name": "f28",
+      "type": [
+        "null",
+        "long"
+      ]
+    },
+    {
+      "name": "f27",
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    {
+      "name": "f26",
+      "type": "bytes"
+    },
+    {
+      "name": "f25",
+      "type": "double"
+    },
+    {
+      "name": "f24",
+      "type": "boolean"
+    },
+    {
+      "name": "f23",
+      "type": "double"
+    },
+    {
+      "name": "f22",
+      "type": "string"
+    },
+    {
+      "name": "f21",
+      "type": "long"
+    },
+    {
+      "name": "f20",
+      "type": "long"
+    },
+    {
+      "name": "f19",
+      "type": "Color"
+    },
+    {
+      "name": "f18",
+      "type": [
+        "null",
+        "long"
+      ]
+    },
+    {
+      "name": "f17",
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    {
+      "name": "f16",
+      "type": "bytes"
+    },
+    {
+      "name": "f15",
+      "type": "double"
+    },
+    {
+      "name": "f14",
+      "type": "boolean"
+    },
+    {
+      "name": "f13",
+      "type": "double"
+    },
+    {
+      "name": "f12",
+      "type": "string"
+    },
+    {
+      "name": "f11",
+      "type": "long"
+    },
+    {
+      "name": "f10",
+      "type": "long"
+    },
+    {
+      "name": "f9",
+      "type": "Color"
+    },
+    {
+      "name": "f8",
+      "type": [
+        "null",
+        "long"
+      ]
+    },
+    {
+      "name": "f7",
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    {
+      "name": "f6",
+      "type": "bytes"
+    },
+    {
+      "name": "f5",
+      "type": "double"
+    },
+    {
+      "name": "f4",
+      "type": "boolean"
+    },
+    {
+      "name": "f3",
+      "type": "double"
+    },
+    {
+      "name": "f2",
+      "type": "string"
+    },
+    {
+      "name": "f1",
+      "type": "long"
+    },
+    {
+      "name": "f0",
+      "type": "long"
+    }
+  ]
+}

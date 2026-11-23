@@ -1,4 +1,4 @@
-<!-- page: title="Reference" track="reference" order=0 summary="The Reference track: the value mapping, the types of generated code and the generator library, the JSON encoding, the compressions and container file types, the AvroLimits defaults, the exception types, the conformance with the Avro specification, and the API reference on pub.dev." -->
+<!-- page: title="Reference" track="reference" order=0 summary="The Reference track: the value mapping, the types of generated code and the generator library, the JSON encoding, the compressions and container file types, the AvroLimits defaults, the exception types, the conformance with the Avro specification, the sort order and compatibility APIs, the benchmark results, and the API reference on pub.dev." -->
 <p class="lede">
   Lookups, not reading: tables of what the package does, with little prose. The
   <a href="../guide/index.html">Guide</a> explains the same facts with examples.
@@ -44,7 +44,21 @@
     <a class="card" href="conformance.html">
       <p class="eyebrow">Tables</p>
       <p class="card-title">Spec conformance</p>
-      <p>What of Avro 1.12 is in 0.3.0, and the test oracles and interoperability results.</p>
+      <p>What of Avro 1.12 is in 0.4.0, the platforms, and the test oracles and interoperability results.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="sort-order-compatibility.html">
+      <p class="eyebrow">Tables</p>
+      <p class="card-title">Sort order and compatibility</p>
+      <p>The order of every schema, the comparison methods, <code>checkCompatibility</code> and every <code>IncompatibilityKind</code>.</p>
+    </a>
+  </li>
+  <li>
+    <a class="card" href="benchmarks.html">
+      <p class="eyebrow">Tables</p>
+      <p class="card-title">Benchmarks</p>
+      <p>Microseconds per operation before and after 0.4.0, next to Java and fastavro, on one machine.</p>
     </a>
   </li>
   <li>

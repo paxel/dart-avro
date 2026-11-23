@@ -1,4 +1,4 @@
-<!-- page: title="Glossary" track="start" order=3 summary="Every avro term in one or two sentences: writer and reader schema, resolution, canonical form, fingerprint, props, codec, datum, branch, container file, header, metadata, block, sync marker, compression, single-object header." -->
+<!-- page: title="Glossary" track="start" order=3 summary="Every avro term in one or two sentences: writer and reader schema, resolution, compatibility, canonical form, fingerprint, props, codec, datum, branch, sort order, container file, header, metadata, block, sync marker, compression, single-object header." -->
 <p class="lede">
   Every term the documentation uses, defined once. The vocabulary itself is kept in
   <code>CONTEXT.md</code> in the repository.
@@ -17,6 +17,12 @@
   <dt id="resolution">Resolution</dt>
   <dd>
     The mapping from a writer schema to a reader schema, as the Avro specification defines it.
+  </dd>
+
+  <dt id="compatibility">Compatibility</dt>
+  <dd>
+    Whether data of a writer schema can be read as a reader schema by resolution, as
+    <code>checkCompatibility</code> checks it from the two schemas, without data.
   </dd>
 
   <dt id="canonical-form">Canonical form</dt>
@@ -53,6 +59,12 @@
   <dd>
     The member of a union schema that a value belongs to. <code>Branch(name, value)</code> names it
     when encoding.
+  </dd>
+
+  <dt id="sort-order">Sort order</dt>
+  <dd>
+    The order the Avro specification defines on the values of a schema, by which
+    <code>compare</code> and <code>compareBytes</code> compare values and encodings.
   </dd>
 </dl>
 

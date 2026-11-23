@@ -1,0 +1,105 @@
+<!-- page: title="Sort order and compatibility" track="reference" order=7 summary="The comparison methods AvroCodec.compare, AvroCodec.compareBytes and TypedCodec.compare with the order of every schema and what they throw; checkCompatibility, SchemaCompatibility, Incompatibility and every IncompatibilityKind." -->
+<p class="lede">
+  The APIs of the Avro sort order and of the compatibility check, as tables. The guides
+  <a href="../guide/sort-order.html">Sort order</a> and
+  <a href="../guide/compatibility.html">Schema compatibility</a> show them at work.
+</p>
+
+<h2>The comparison methods</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Method</th>                                              <th>Compares</th>                                                  <th>Throws</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>int AvroCodec.compare(Object? a, Object? b)</code></td>  <td>Two values of the writer schema, as <code>encode</code> takes them</td>   <td><code>EncodeException</code> for a value that does not fit the schema; <code>LimitExceededException</code> beyond <code>maxValueDepth</code>; <code>ArgumentError</code> on a map</td></tr>
+    <tr><td><code>int AvroCodec.compareBytes(Uint8List a, Uint8List b)</code></td><td>Two encodings of the writer schema, read side by side up to the first difference, without decoding them</td><td><code>DecodeException</code> for bytes that are not a valid encoding, as far as it reads; the limits as <code>decode</code>; <code>ArgumentError</code> on a map</td></tr>
+    <tr><td><code>int TypedCodec.compare(T a, T b)</code></td>          <td>Two values of a generated class, by their generic values</td>        <td>As <code>AvroCodec.compare</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  Each returns -1, 0 or 1, and <code>compare</code> and <code>compareBytes</code> agree on the
+  values and their encodings. A field with <code>"order": "ignore"</code> is not compared, so a
+  map there throws nothing.
+</p>
+
+<h2>The order of each schema</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Schema</th>                       <th>Order</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>null</code></td>              <td>All equal</td></tr>
+    <tr><td><code>boolean</code></td>           <td><code>false</code> before <code>true</code></td></tr>
+    <tr><td><code>int</code>, <code>long</code></td><td>By value</td></tr>
+    <tr><td><code>float</code></td>             <td>By the 32-bit value it encodes to; <code>-0.0</code> before <code>0.0</code>; <code>NaN</code> after every other number and equal to itself</td></tr>
+    <tr><td><code>double</code></td>            <td>By value; <code>-0.0</code> before <code>0.0</code>; <code>NaN</code> after every other number and equal to itself</td></tr>
+    <tr><td><code>bytes</code>, <code>fixed</code></td><td>Unsigned bytes, lexicographically; a shorter prefix first</td></tr>
+    <tr><td><code>string</code></td>            <td>Its UTF-8 bytes, unsigned, lexicographically</td></tr>
+    <tr><td><code>enum</code></td>              <td>The index of the symbol</td></tr>
+    <tr><td><code>array</code></td>             <td>Element by element, then by length</td></tr>
+    <tr><td><code>map</code></td>               <td>None; <code>ArgumentError</code></td></tr>
+    <tr><td><code>record</code></td>            <td>Field by field in schema order: <code>ascending</code> (the default) as is, <code>descending</code> reversed, <code>ignore</code> skipped</td></tr>
+    <tr><td>union</td>                          <td>The index of the branch, then the value</td></tr>
+    <tr><td><code>decimal</code></td>           <td>The bytes of its two's complement: a negative value after a positive one</td></tr>
+    <tr><td><code>duration</code></td>          <td>Its 12 bytes, months, days and milliseconds each little-endian</td></tr>
+    <tr><td>other logical types</td>            <td>As the underlying value they encode to: dates, times and timestamps in time order</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>The compatibility check</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Member</th>                                                     <th>What it is</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>SchemaCompatibility checkCompatibility({required Schema reader, required Schema writer})</code></td><td>Every reason data of <code>writer</code> cannot be read as <code>reader</code> by the resolution of <code>AvroCodec</code>, without data</td></tr>
+    <tr><td><code>bool SchemaCompatibility.isCompatible</code></td>           <td>Whether every datum of the writer schema can be read as the reader schema</td></tr>
+    <tr><td><code>List&lt;Incompatibility&gt; SchemaCompatibility.incompatibilities</code></td><td>Every incompatibility, in the order of the schemas; unmodifiable; empty if compatible</td></tr>
+    <tr><td><code>IncompatibilityKind Incompatibility.kind</code></td>       <td>The kind, below</td></tr>
+    <tr><td><code>String Incompatibility.message</code></td>                <td>What is incompatible, in words</td></tr>
+    <tr><td><code>String Incompatibility.readerPath</code></td>             <td>Where in the reader schema, such as <code>Memo.tags[]</code>; names only the reader's fields and branches</td></tr>
+    <tr><td><code>String Incompatibility.writerPath</code></td>             <td>Where in the writer schema, as <code>readerPath</code> is in the reader's</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  The paths use the notation of <code>ResolutionException</code>: the schema's name, then
+  <code>.field</code>, <code>[]</code> for array items, <code>{}</code> for map values and
+  <code>&lt;branch&gt;</code> for a union branch. <code>Incompatibility</code> has value equality;
+  its <code>toString()</code> reads
+  <code>Incompatibility(typeMismatch at Memo.tags[], writer Memo.tags[]: string does not resolve to long)</code>.
+</p>
+
+<h2>The kinds</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th><code>IncompatibilityKind</code></th>      <th>When</th>                                                                             <th>Does <code>AvroCodec(writer:, reader:)</code> throw?</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>nameMismatch</code></td>                     <td>A named type of the writer has neither the reader's name nor one of its aliases</td>    <td>Yes</td></tr>
+    <tr><td><code>fixedSizeMismatch</code></td>                <td>The fixed sizes differ</td>                                                              <td>Yes</td></tr>
+    <tr><td><code>missingEnumSymbols</code></td>               <td>The writer's enum has symbols the reader's lacks, and the reader's has no default</td>   <td>No: <code>decode</code> throws <code>ResolutionException</code> for a datum with such a symbol</td></tr>
+    <tr><td><code>readerFieldMissingDefaultValue</code></td>   <td>A reader field the writer lacks has no default</td>                                     <td>Yes</td></tr>
+    <tr><td><code>typeMismatch</code></td>                     <td>The writer's type neither is the reader's nor promotes to it</td>                        <td>Yes</td></tr>
+    <tr><td><code>missingUnionBranch</code></td>               <td>No branch of the reader's union takes the writer's type, or the writer's union has no branch</td><td>Yes</td></tr>
+    <tr><td><code>decimalMismatch</code></td>                  <td>The decimals differ in precision or scale; Java has no such kind</td>                    <td>Yes</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  The last column holds outside a writer's union. An incompatibility inside a branch of a
+  writer's union, with <code>&lt;branch&gt;</code> in its <code>writerPath</code>, lets the codec be
+  made as long as another branch resolves; <code>decode</code> then throws
+  <code>ResolutionException</code> for a datum in that branch. Only when no branch resolves does
+  the constructor throw.
+</p>
+<p>
+  The names follow <code>SchemaIncompatibilityType</code> of Apache Avro for Java where one
+  matches.
+</p>

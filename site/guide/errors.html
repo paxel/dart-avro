@@ -115,6 +115,8 @@ cannot read lz4 files</code></pre>
   <tbody>
     <tr><td><code>ArgumentError</code></td><td><code>AvroFileWriter</code> gets a <code>metadata</code> key starting with <code>avro.</code>, a <code>syncMarker</code> that is not 16 bytes, or a <code>schemaJson</code> with another canonical form than the codec's writer schema</td></tr>
     <tr><td><code>ArgumentError</code></td><td><code>crc64FromBytes</code> gets anything but 8 bytes</td></tr>
+    <tr><td><code>ArgumentError</code></td><td><code>compare</code> or <code>compareBytes</code> of a codec, or <code>TypedCodec.compare</code>, meets a map, which Avro gives no order; see <a href="sort-order.html">Sort order</a></td></tr>
+    <tr><td><code>UnsupportedError</code></td><td>A codec, a container file reader or writer, or a CRC-64 function is used in an app compiled with dart2js; see <a href="flutter-web.html">Flutter web</a></td></tr>
     <tr><td><code>StateError</code></td>   <td><code>add</code>, <code>flush</code> or <code>close</code> is called on an <code>AvroFileWriter</code> or <code>AvroFileStreamWriter</code> that is closed, or <code>records</code> of an <code>AvroFileStreamReader</code> a second time or after <code>cancel</code></td></tr>
   </tbody>
 </table>

@@ -5,3 +5,4 @@ doc/api/
 node_modules/
 site-dist/
 fuzz/artifacts/
+tool/bench/java/target/

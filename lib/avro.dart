@@ -4,6 +4,12 @@
 /// `package:avro/generate.dart`.
 library;
 
+export 'src/compatibility.dart'
+    show
+        IncompatibilityKind,
+        Incompatibility,
+        SchemaCompatibility,
+        checkCompatibility;
 export 'src/container.dart' show AvroFileHeader, AvroFileReader, AvroFileWriter;
 export 'src/container_stream.dart'
     show AvroFileStreamReader, AvroFileStreamWriter;

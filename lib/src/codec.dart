@@ -1,3 +1,5 @@
+import 'dart:collection';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'binary.dart';
@@ -6,8 +8,11 @@ import 'fingerprint.dart';
 import 'json.dart';
 import 'limits.dart';
 import 'logical.dart';
+import 'platform.dart';
 import 'resolve.dart';
 import 'schema.dart';
+
+part 'codec_plan.dart';
 
 /// A value of a union, with the branch it belongs to named explicitly.
 ///
@@ -46,9 +51,16 @@ final class AvroCodec {
     this.limits = const AvroLimits(),
     this.decodeBranches = false,
   }) : reader = reader ?? writer,
-       _plan = reader == null || identical(reader, writer)
-           ? null
-           : resolve(writer, reader, branches: decodeBranches);
+       _plan = _planFor(writer, reader, decodeBranches);
+
+  /// The resolution plan of [writer] read as [reader], checking the platform first, so that
+  /// dart2js fails before any work is done.
+  static Plan? _planFor(Schema writer, Schema? reader, bool branches) {
+    checkPlatform();
+    return reader == null || identical(reader, writer)
+        ? null
+        : resolve(writer, reader, branches: branches);
+  }
 
   /// The schema data is encoded with.
   final Schema writer;
@@ -65,14 +77,28 @@ final class AvroCodec {
   /// How data of the writer schema is read as the reader schema; null when they are one.
   final Plan? _plan;
 
+  /// The compiled encoder of the writer schema, compiled at its first use.
+  late final _Enc _encoder = _EncoderCompiler(limits).compile(writer);
+
+  /// The compiled decoder of the writer schema, compiled at its first use.
+  late final _Dec _decoder = _DecoderCompiler(
+    limits,
+    decodeBranches,
+  ).compile(writer);
+
   /// Encodes [value] with the writer schema.
   ///
   /// Throws [EncodeException] if the value does not fit the schema.
   Uint8List encode(Object? value) {
-    final out = BinaryWriter();
+    final out = BinaryWriter(_sizeHint);
     encodeInto(this, out, value);
-    return out.toBytes();
+    // Capped, so that one large value does not make every later buffer large.
+    _sizeHint = out.length > 1 << 20 ? 64 : out.length;
+    return out.takeBytes();
   }
+
+  /// The size of the last encoding, the first guess at the size of the next.
+  int _sizeHint = 64;
 
   /// Decodes one datum. Throws [DecodeException] if the bytes are not a valid encoding or if
   /// bytes are left over after the datum.
@@ -103,6 +129,34 @@ final class AvroCodec {
   /// value, if [json] is not JSON or not a value of the writer schema: a record must have
   /// exactly its fields, an `int` must fit 32 bits.
   Object? decodeJson(String json) => decodeJsonWith(this, json);
+
+  /// Compares [a] and [b], two values of the writer schema as [encode] takes them, by the
+  /// Avro sort order; returns -1, 0 or 1.
+  ///
+  /// `null`s are equal, `false` is less than `true`, numbers compare by value (`NaN` greater
+  /// than every other number and equal to itself, `-0.0` less than `0.0`; a `float` as the
+  /// 32-bit value it encodes to), `bytes`, `fixed` and strings (as UTF-8) by their unsigned
+  /// bytes, arrays element by element and then by length, enums by the index of their symbol,
+  /// unions by the index of their branch and then by value, and records field by field in
+  /// the field's `order`: `ascending`, `descending`, or `ignore`, whose values are not looked
+  /// at. A value of a logical type compares as the value of the underlying type it encodes
+  /// to; a `decimal` therefore by the bytes of its two's complement, not by its number.
+  ///
+  /// The values are of the writer schema: what [decode] returns for another reader schema
+  /// is not. Agrees with [compareBytes] on the encodings of the values. Throws
+  /// [EncodeException] if a value compared does not fit the schema, and [ArgumentError] on a
+  /// map, which Avro gives no order.
+  int compare(Object? a, Object? b) =>
+      _ValueComparer(limits).compare(writer, a, b, r'$', 0).sign;
+
+  /// Compares [a] and [b], two encodings of the writer schema, by the Avro sort order of
+  /// [compare], without decoding them; returns -1, 0 or 1.
+  ///
+  /// Reads only as far as the first difference: bytes after it, and bytes after the datums,
+  /// are not checked. What it reads it checks as [decode] does, and throws [DecodeException]
+  /// if it is not a valid encoding, and [ArgumentError] on a map, which Avro gives no order.
+  int compareBytes(Uint8List a, Uint8List b) =>
+      _BytesComparer(this, a, b).compare(writer, r'$', 0).sign;
 }
 
 /// The header of a datum in single-object encoding: the marker `C3 01` and the writer
@@ -173,13 +227,34 @@ extension SingleObjectEncoding on AvroCodec {
 }
 
 /// Encodes [value] with [codec] into [out]; for this package's own framing.
-void encodeInto(AvroCodec codec, BinaryWriter out, Object? value) =>
-    _Encoder(out, codec.limits).encode(codec.writer, value, r'$', 0);
+///
+/// The compiled encoder runs first; if it gives up, what it wrote is dropped and the tree walk
+/// encodes the value again, to throw what is wrong with it.
+void encodeInto(AvroCodec codec, BinaryWriter out, Object? value) {
+  final start = out.length;
+  try {
+    codec._encoder(out, value, 0);
+    return;
+  } on Object {
+    out.truncate(start);
+  }
+  _Encoder(out, codec.limits).encode(codec.writer, value, r'$', 0);
+}
 
 /// Decodes one datum with [codec] from [input]; for this package's own framing.
 Object? decodeFrom(AvroCodec codec, BinaryReader input) {
-  final decoder = _Decoder(input, codec.limits, codec.decodeBranches);
   final plan = codec._plan;
+  if (plan == null) {
+    // The compiled decoder first; if it gives up, the tree walk decodes the datum again, to
+    // throw what is wrong with it.
+    final start = input.offset;
+    try {
+      return codec._decoder(input, 0);
+    } on Object {
+      input.rewind(start);
+    }
+  }
+  final decoder = _Decoder(input, codec.limits, codec.decodeBranches);
   if (plan == null) return decoder.decode(codec.writer, r'$', 0);
   return runPlan(
     plan,
@@ -318,44 +393,46 @@ final class _Encoder {
           encode(f.schema, value[f.name], '$path.${f.name}', depth + 1);
         }
       case UnionSchema(:final branches):
-        final int index;
-        final Object? inner;
-        if (value is Branch) {
-          index = branches.indexWhere((b) => branchName(b) == value.name);
-          if (index < 0) {
-            throw EncodeException(
-              'the union has no branch "${value.name}"; it has '
-              '${branches.map(branchName).join(', ')}',
-              path: path,
-            );
-          }
-          inner = value.value;
-        } else {
-          final fitting = [
-            for (var i = 0; i < branches.length; i++)
-              if (_fits(branches[i], value)) i,
-          ];
-          if (fitting.isEmpty) {
-            throw EncodeException(
-              'no branch of the union fits ${value.runtimeType}; it has '
-              '${branches.map(branchName).join(', ')}',
-              path: path,
-            );
-          }
-          if (fitting.length > 1) {
-            throw EncodeException(
-              'more than one branch fits; wrap the value in a Branch of one of '
-              '${fitting.map((i) => branchName(branches[i])).join(', ')}',
-              path: path,
-            );
-          }
-          index = fitting.single;
-          inner = value;
-        }
+        final (index, inner) = _branchOf(branches, value, path);
         out.writeLong(index);
         encode(branches[index], inner, path, depth + 1);
     }
   }
+}
+
+/// The index of the branch of [branches] that [value] belongs to, and the value inside it:
+/// named by a [Branch], or the only branch that fits.
+(int, Object?) _branchOf(List<Schema> branches, Object? value, String path) {
+  if (value is Branch) {
+    final index = branches.indexWhere((b) => branchName(b) == value.name);
+    if (index < 0) {
+      throw EncodeException(
+        'the union has no branch "${value.name}"; it has '
+        '${branches.map(branchName).join(', ')}',
+        path: path,
+      );
+    }
+    return (index, value.value);
+  }
+  final fitting = [
+    for (var i = 0; i < branches.length; i++)
+      if (_fits(branches[i], value)) i,
+  ];
+  if (fitting.isEmpty) {
+    throw EncodeException(
+      'no branch of the union fits ${value.runtimeType}; it has '
+      '${branches.map(branchName).join(', ')}',
+      path: path,
+    );
+  }
+  if (fitting.length > 1) {
+    throw EncodeException(
+      'more than one branch fits; wrap the value in a Branch of one of '
+      '${fitting.map((i) => branchName(branches[i])).join(', ')}',
+      path: path,
+    );
+  }
+  return (fitting.single, value);
 }
 
 bool _isInt32(int v) => v >= -0x80000000 && v <= 0x7fffffff;
@@ -561,6 +638,276 @@ final class _Decoder {
         return decodeBranches && decodesAsBranch(schema, branches[i])
             ? Branch(branchName(branches[i]), value)
             : value;
+    }
+  }
+}
+
+/// The unsigned lexicographic order of [a] and [b], a shorter prefix first.
+int _compareUnsigned(Uint8List a, Uint8List b) {
+  final n = a.length < b.length ? a.length : b.length;
+  for (var i = 0; i < n; i++) {
+    if (a[i] != b[i]) return a[i] < b[i] ? -1 : 1;
+  }
+  return a.length.compareTo(b.length);
+}
+
+final _float32 = Float32List(1);
+
+/// [v] rounded to the 32-bit float it encodes to.
+double _toFloat32(double v) => (_float32..[0] = v)[0];
+
+Never _mapsUnordered(String path) => throw ArgumentError(
+  'the map at $path cannot be compared: Avro gives maps no order',
+);
+
+/// Compares two values of a schema by the Avro sort order, checking them as [_Encoder] does.
+final class _ValueComparer {
+  _ValueComparer(this.limits);
+
+  final AvroLimits limits;
+
+  int compare(Schema schema, Object? a, Object? b, String path, int depth) {
+    final maxDepth = limits.maxValueDepth;
+    if (maxDepth != null && depth > maxDepth) {
+      throw LimitExceededException(
+        'the value at $path is nested deeper than $maxDepth',
+        limit: 'maxValueDepth',
+      );
+    }
+    if (schema is! UnionSchema) {
+      for (final v in [a, b]) {
+        if (v is Branch) {
+          throw EncodeException(
+            'expected a plain value for ${branchName(schema)}, got Branch',
+            path: path,
+          );
+        }
+      }
+    }
+    final logical = logicalOf(schema);
+    if (logical == null) return compareRaw(schema, a, b, path, depth);
+    return compareRaw(
+      schema,
+      toUnderlying(logical, schema, a, path),
+      toUnderlying(logical, schema, b, path),
+      path,
+      depth,
+    );
+  }
+
+  int compareRaw(Schema schema, Object? a, Object? b, String path, int depth) {
+    Never wrong(Object? value, String expected) => throw EncodeException(
+      'expected $expected for ${branchName(schema)}, got ${value.runtimeType}',
+      path: path,
+    );
+    switch (schema) {
+      case PrimitiveSchema(type: 'null'):
+        if (a != null) wrong(a, 'null');
+        if (b != null) wrong(b, 'null');
+        return 0;
+      case PrimitiveSchema(type: 'boolean'):
+        if (a is! bool) wrong(a, 'bool');
+        if (b is! bool) wrong(b, 'bool');
+        return a == b ? 0 : (a ? 1 : -1);
+      case PrimitiveSchema(type: 'int' || 'long'):
+        if (a is! int) wrong(a, 'int');
+        if (b is! int) wrong(b, 'int');
+        if (schema.type == 'int') {
+          for (final v in [a, b]) {
+            if (!_isInt32(v)) {
+              throw EncodeException('$v does not fit 32 bits', path: path);
+            }
+          }
+        }
+        return a.compareTo(b);
+      case PrimitiveSchema(type: 'float'):
+        if (a is! num) wrong(a, 'double');
+        if (b is! num) wrong(b, 'double');
+        return _toFloat32(a.toDouble()).compareTo(_toFloat32(b.toDouble()));
+      case PrimitiveSchema(type: 'double'):
+        if (a is! num) wrong(a, 'double');
+        if (b is! num) wrong(b, 'double');
+        return a.toDouble().compareTo(b.toDouble());
+      case PrimitiveSchema(type: 'bytes'):
+        if (a is! Uint8List) wrong(a, 'Uint8List');
+        if (b is! Uint8List) wrong(b, 'Uint8List');
+        return _compareUnsigned(a, b);
+      case PrimitiveSchema(type: 'string'):
+        if (a is! String) wrong(a, 'String');
+        if (b is! String) wrong(b, 'String');
+        checkWellFormed(a, path);
+        checkWellFormed(b, path);
+        return _compareUnsigned(utf8.encode(a), utf8.encode(b));
+      case PrimitiveSchema():
+        throw StateError('unknown primitive ${schema.type}');
+      case FixedSchema(:final size):
+        Uint8List fixed(Object? v) {
+          if (v is! Uint8List) wrong(v, 'Uint8List');
+          if (v.length != size) {
+            throw EncodeException(
+              'a fixed of $size bytes, got ${v.length}',
+              path: path,
+            );
+          }
+          return v;
+        }
+        return _compareUnsigned(fixed(a), fixed(b));
+      case EnumSchema(:final symbols):
+        int index(Object? v) {
+          if (v is! String) wrong(v, 'String');
+          final i = symbols.indexOf(v);
+          if (i < 0) {
+            throw EncodeException(
+              '"$v" is not a symbol of ${schema.fullName}',
+              path: path,
+            );
+          }
+          return i;
+        }
+        return index(a).compareTo(index(b));
+      case ArraySchema(:final items):
+        if (a is! List<Object?> || a is Uint8List) wrong(a, 'List');
+        if (b is! List<Object?> || b is Uint8List) wrong(b, 'List');
+        final n = a.length < b.length ? a.length : b.length;
+        for (var i = 0; i < n; i++) {
+          final c = compare(items, a[i], b[i], '$path[$i]', depth + 1);
+          if (c != 0) return c;
+        }
+        return a.length.compareTo(b.length);
+      case MapSchema():
+        _mapsUnordered(path);
+      case RecordSchema(:final fields):
+        Map<String, Object?> record(Object? v) {
+          if (v is! Map<String, Object?>) wrong(v, 'Map<String, Object?>');
+          for (final key in v.keys) {
+            if (!fields.any((f) => f.name == key)) {
+              throw EncodeException(
+                '"$key" is not a field of ${schema.fullName}',
+                path: path,
+              );
+            }
+          }
+          return v;
+        }
+        final ma = record(a);
+        final mb = record(b);
+        for (final f in fields) {
+          if (f.order == 'ignore') continue;
+          for (final m in [ma, mb]) {
+            if (!m.containsKey(f.name)) {
+              throw EncodeException(
+                'the field "${f.name}" is missing',
+                path: path,
+              );
+            }
+          }
+          final c = compare(
+            f.schema,
+            ma[f.name],
+            mb[f.name],
+            '$path.${f.name}',
+            depth + 1,
+          );
+          if (c != 0) return f.order == 'descending' ? -c : c;
+        }
+        return 0;
+      case UnionSchema(:final branches):
+        final (ia, va) = _branchOf(branches, a, path);
+        final (ib, vb) = _branchOf(branches, b, path);
+        if (ia != ib) return ia.compareTo(ib);
+        return compare(branches[ia], va, vb, path, depth + 1);
+    }
+  }
+}
+
+/// Compares two encodings of a schema by the Avro sort order, reading both side by side and
+/// checking what it reads as [_Decoder] does.
+final class _BytesComparer {
+  _BytesComparer(AvroCodec codec, Uint8List a, Uint8List b)
+    : this._(BinaryReader(a), BinaryReader(b), codec.limits);
+
+  _BytesComparer._(this.a, this.b, AvroLimits limits)
+    : da = _Decoder(a, limits, false),
+      db = _Decoder(b, limits, false);
+
+  final BinaryReader a;
+  final BinaryReader b;
+  final _Decoder da;
+  final _Decoder db;
+
+  /// The index of a symbol or a branch, one of [count]; [invalid] says why another is not.
+  static int _index(
+    BinaryReader input,
+    int count,
+    String Function(int i) invalid,
+  ) {
+    final start = input.offset;
+    final i = input.readInt();
+    if (i < 0 || i >= count) input.fail(invalid(i), start);
+    return i;
+  }
+
+  int compare(Schema schema, String path, int depth) {
+    da.checkDepth(path, depth);
+    switch (schema) {
+      case PrimitiveSchema(type: 'null'):
+        return 0;
+      case PrimitiveSchema(type: 'boolean'):
+        final x = a.readBoolean();
+        final y = b.readBoolean();
+        return x == y ? 0 : (x ? 1 : -1);
+      case PrimitiveSchema(type: 'int'):
+        return a.readInt().compareTo(b.readInt());
+      case PrimitiveSchema(type: 'long'):
+        return a.readLong().compareTo(b.readLong());
+      case PrimitiveSchema(type: 'float'):
+        return a.readFloat().compareTo(b.readFloat());
+      case PrimitiveSchema(type: 'double'):
+        return a.readDouble().compareTo(b.readDouble());
+      case PrimitiveSchema(type: 'bytes' || 'string'):
+        final x = a.readView(a.readLength());
+        final y = b.readView(b.readLength());
+        return _compareUnsigned(x, y);
+      case PrimitiveSchema():
+        throw StateError('unknown primitive ${schema.type}');
+      case FixedSchema(:final size):
+        return _compareUnsigned(a.readView(size), b.readView(size));
+      case EnumSchema(:final symbols):
+        String what(int i) => '$i is not a symbol of ${schema.fullName}';
+        final x = _index(a, symbols.length, what);
+        return x.compareTo(_index(b, symbols.length, what));
+      case ArraySchema(:final items):
+        var ra = 0;
+        var rb = 0;
+        for (var i = 0; ; i++) {
+          if (ra == 0) ra = da.blockCount(items, 0, path);
+          if (rb == 0) rb = db.blockCount(items, 0, path);
+          if (ra == 0 || rb == 0) return ra.compareTo(rb);
+          final c = compare(items, '$path[$i]', depth + 1);
+          if (c != 0) return c;
+          ra--;
+          rb--;
+        }
+      case MapSchema():
+        _mapsUnordered(path);
+      case RecordSchema(:final fields):
+        for (final f in fields) {
+          final fieldPath = '$path.${f.name}';
+          if (f.order == 'ignore') {
+            da.decode(f.schema, fieldPath, depth + 1);
+            db.decode(f.schema, fieldPath, depth + 1);
+            continue;
+          }
+          final c = compare(f.schema, fieldPath, depth + 1);
+          if (c != 0) return f.order == 'descending' ? -c : c;
+        }
+        return 0;
+      case UnionSchema(:final branches):
+        String what(int i) => 'the union has no branch $i';
+        final x = _index(a, branches.length, what);
+        final y = _index(b, branches.length, what);
+        if (x != y) return x.compareTo(y);
+        return compare(branches[x], path, depth + 1);
     }
   }
 }

@@ -1,0 +1,102 @@
+{
+  "type": "record",
+  "name": "Envelope",
+  "namespace": "axt",
+  "doc": "One AXT message. Defined in spec/envelope.md. The field order is part of the format: format is always the first field, signature always the last.",
+  "fields": [
+    {
+      "name": "format",
+      "type": "long",
+      "doc": "Version of the envelope format. 1 for the envelope defined in spec/envelope.md. Every later envelope schema keeps this field first and of type int."
+    },
+    {
+      "name": "kind",
+      "type": {
+        "type": "enum",
+        "name": "Kind",
+        "doc": "What the message is. Each kind is defined in the document named in spec/envelope.md, section 2.2. DEVICE_JOIN, DEVICE_ADD and DEVICE_REMOVE: the devices of one sender, spec/keys.md, section 5. CHANGE and RESYNC: records between the devices of one sender. FORWARD: a message of another app passed on between the devices of one sender. WITHDRAW: a record its sender no longer shares. PROPOSAL and PROPOSAL_REPLY: a change a receiver proposes to a record's sender, and the answer.",
+        "symbols": [
+          "MANIFEST",
+          "OFFER",
+          "ACCEPT",
+          "DECLINE",
+          "DATA",
+          "DELETE",
+          "ACK",
+          "ERROR",
+          "DEVICE_JOIN",
+          "DEVICE_ADD",
+          "DEVICE_REMOVE",
+          "CHANGE",
+          "RESYNC",
+          "FORWARD",
+          "WITHDRAW",
+          "PROPOSAL",
+          "PROPOSAL_REPLY"
+        ]
+      },
+      "doc": "What the message is, and so which schema its body has."
+    },
+    {
+      "name": "sender",
+      "type": {
+        "type": "fixed",
+        "name": "PublicKey",
+        "size": 32,
+        "doc": "An Ed25519 public key in the encoding of RFC 8032. Defined in spec/keys.md."
+      },
+      "doc": "The Ed25519 public key of the sending device, which made the signature."
+    },
+    {
+      "name": "record",
+      "type": [
+        "null",
+        {
+          "type": "record",
+          "name": "RecordRef",
+          "doc": "Which record, and which version of it, a message is about. Defined in spec/records.md.",
+          "fields": [
+            {
+              "name": "id",
+              "type": {
+                "type": "string",
+                "logicalType": "uuid"
+              },
+              "doc": "The record's stable id, a UUID in its 36-character lower-case text form."
+            },
+            {
+              "name": "version",
+              "type": "long",
+              "doc": "The record's version. Defined in spec/records.md."
+            }
+          ]
+        }
+      ],
+      "default": null,
+      "doc": "The record the message is about; null for messages that are not about one record."
+    },
+    {
+      "name": "body",
+      "type": "bytes",
+      "doc": "Empty, or one datum in Avro single-object encoding: the marker C3 01, the 8-byte little-endian CRC-64-AVRO fingerprint of the datum's writer schema, then the datum in Avro binary encoding."
+    },
+    {
+      "name": "note",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null
+    },
+    {
+      "name": "signature",
+      "type": {
+        "type": "fixed",
+        "name": "Signature",
+        "size": 64,
+        "doc": "An Ed25519 signature. Defined in spec/keys.md."
+      },
+      "doc": "The sender's signature over the message. What it covers is defined in spec/keys.md."
+    }
+  ]
+}

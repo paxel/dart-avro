@@ -1,0 +1,5 @@
+# The tests tagged web need no dart:io: CI runs them in Chrome under dart2wasm as well,
+# `dart test -p chrome --compiler dart2wasm -t web`, with their test data from
+# test/web/data.g.dart (tool/web_test_data.dart).
+tags:
+  web:

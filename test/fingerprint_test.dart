@@ -1,3 +1,7 @@
+// Needs dart:io, or test data read from files: not one of the web tests.
+@TestOn('vm')
+library;
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,62 +9,12 @@ import 'package:avro/avro.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:test/test.dart';
 
-/// One case of Apache Avro's share/test/data/schema-tests.txt.
-typedef SchemaCase = ({
-  String id,
-  String input,
-  String canonical,
-  int? fingerprint,
-});
-
-List<SchemaCase> readSchemaTests(String path) {
-  final cases = <SchemaCase>[];
-  final lines = File(path).readAsLinesSync();
-  String? id;
-  final values = <String, String>{};
-  void flush() {
-    if (id != null && values.containsKey('INPUT')) {
-      cases.add((
-        id: id,
-        input: values['INPUT']!,
-        canonical: values['canonical']!,
-        fingerprint: switch (values['fingerprint']) {
-          final String f => int.parse(f),
-          null => null,
-        },
-      ));
-    }
-    values.clear();
-  }
-
-  for (var i = 0; i < lines.length; i++) {
-    final line = lines[i];
-    final idMatch = RegExp(r'^// (\d{3})').firstMatch(line);
-    if (idMatch != null) {
-      flush();
-      id = idMatch.group(1);
-      continue;
-    }
-    final m = RegExp(r'^<<(\w+)(?: (.*))?$').firstMatch(line);
-    if (m == null) continue;
-    final key = m.group(1)!;
-    if (m.group(2) != null) {
-      values[key] = m.group(2)!;
-    } else {
-      // A heredoc: the lines up to the one that holds only the key.
-      final body = <String>[];
-      while (lines[++i] != key) {
-        body.add(lines[i]);
-      }
-      values[key] = body.join('\n');
-    }
-  }
-  flush();
-  return cases;
-}
+import 'support/schema_tests.dart';
 
 void main() {
-  final cases = readSchemaTests('test/data/apache/schema-tests.txt');
+  final cases = parseSchemaTests(
+    File('test/data/apache/schema-tests.txt').readAsStringSync(),
+  );
 
   test('all cases of schema-tests.txt are read', () {
     expect(cases, hasLength(34));
