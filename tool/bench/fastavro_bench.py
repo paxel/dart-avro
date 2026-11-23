@@ -2,10 +2,11 @@
 that fastavro has, on the same schemas and values.
 
     pip install "fastavro[snappy,zstandard]==1.13.1"
-    python tool/bench/fastavro_bench.py [--json FILE]
+    python tool/bench/fastavro_bench.py [--json]
 
 Run from the repository root. Every case warms up for 1 s and is then timed for at least 2 s.
 Encoding writes fresh bytes per operation, decoding reads a fresh record per operation.
+--json also writes the results to fastavro.json in the current directory.
 """
 
 import io
@@ -189,12 +190,9 @@ def cases():
 
 
 def main(args):
-    json_file = None
-    if "--json" in args:
-        i = args.index("--json")
-        if i + 1 >= len(args):
-            sys.exit("usage: fastavro_bench.py [--json FILE]")
-        json_file = args[i + 1]
+    if any(a != "--json" for a in args):
+        sys.exit("usage: fastavro_bench.py [--json]")
+    json_file = "fastavro.json" if args else None
     results = []
     print(f"{'case':26} {'ops/s':>12} {'µs/op':>12} {'bytes':>9}")
     for name, size, op in cases():

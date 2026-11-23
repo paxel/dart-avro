@@ -125,9 +125,10 @@ nice -n 19 java -cp 'tool/bench/java/target/classes:tool/bench/java/target/depen
 # fastavro
 python3 -m venv /tmp/venv
 /tmp/venv/bin/pip install 'fastavro[snappy,zstandard]==1.13.1'
-nice -n 19 /tmp/venv/bin/python tool/bench/fastavro_bench.py --json fastavro.json</code></pre>
+nice -n 19 /tmp/venv/bin/python tool/bench/fastavro_bench.py --json</code></pre>
 <p>
   Each prints a table of operations per second, µs per operation and the size of the encoding per
-  case; <code>--json</code> also writes it to a file. The comparison is a script to repeat, not a
+  case; <code>--json</code> also writes it to a file: the named one, or <code>fastavro.json</code> for
+  fastavro. The comparison is a script to repeat, not a
   CI gate: CI runners are too noisy for it.
 </p>

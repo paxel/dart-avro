@@ -43,11 +43,11 @@ nice -n 19 java -cp 'tool/bench/java/target/classes:tool/bench/java/target/depen
 # fastavro
 python3 -m venv /tmp/venv
 /tmp/venv/bin/pip install 'fastavro[snappy,zstandard]==1.13.1'
-nice -n 19 /tmp/venv/bin/python tool/bench/fastavro_bench.py --json fastavro.json
+nice -n 19 /tmp/venv/bin/python tool/bench/fastavro_bench.py --json
 ```
 
 Each prints a table of ops/s, µs/op and the size of the encoding per case; `--json` also
-writes it to a file.
+writes it to a file: the named one, or `fastavro.json` for fastavro.
 
 ## Cases
 
